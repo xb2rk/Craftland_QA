@@ -1,19 +1,25 @@
-import { Alert, Button, Input, Segmented, Skeleton, Table, Tag, Typography } from "antd";
+import { Alert, Button, Collapse, Input, Segmented, Skeleton, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 
 import { useLocalizationAskMutation, useLocalizationMutation } from "../../api/hooks.js";
+import { useInspectQuery } from "../../api/hooks.js";
 import { ApiError, type LocalizationMode } from "../../api/types.js";
 import { AiReport } from "../AiReport.js";
 import { SystemFindings } from "../SystemFindings.js";
 import { downloadTextFile } from "../run-io.js";
 import { SectionCard } from "../ui/SectionCard.js";
 
+const MODE_HINTS: Record<LocalizationMode, string> = {
+  check: "Finds missing cells, duplicate keys, and broken rows — deterministic first, AI summary when available.",
+  translate: "Fills empty cells with AI translations and offers the result as a CSV download. Nothing is written back.",
+};
+
 /**
- * LocalizationPanel runs key.csv-style QA for one revision. Check mode runs
- * deterministic integrity checks (duplicate keys, empty values with language
- * names, row widths) plus an AI narrative; translate mode previews AI-filled
- * cells scoped to a language or key, downloadable as CSV. The ask box answers
- * follow-up questions about the checked file.
+ * LocalizationPanel runs key.csv-style QA for one revision. The table is
+ * auto-detected (Craftland convention: key.csv) so designers never type a
+ * path; an override exists for unusual repos. Check mode runs deterministic
+ * integrity checks plus an AI narrative; translate mode previews AI-filled
+ * cells scoped to a language or key, downloadable as CSV.
  */
 export function LocalizationPanel(props: {
   localPath: string;
@@ -21,7 +27,8 @@ export function LocalizationPanel(props: {
   glossary: string;
   onGlossaryChange: (value: string) => void;
 }): React.JSX.Element {
-  const [filePath, setFilePath] = useState("key.csv");
+  const [override, setOverride] = useState("");
+  const [showOverride, setShowOverride] = useState(false);
   const [mode, setMode] = useState<LocalizationMode>("check");
   const [language, setLanguage] = useState("");
   const [key, setKey] = useState("");
@@ -30,6 +37,14 @@ export function LocalizationPanel(props: {
   const [history, setHistory] = useState<Array<{ question: string; answer: string }>>([]);
   const localization = useLocalizationMutation();
   const ask = useLocalizationAskMutation();
+  const inspection = useInspectQuery(props.localPath);
+
+  const detected =
+    inspection.data?.files
+      .map((file) => file.relativePath)
+      .find((name) => name.toLowerCase().replace(/\\/g, "/").endsWith("key.csv")) ?? null;
+  const effectiveFile =
+    override.trim().length > 0 ? override.trim() : (detected ?? undefined);
 
   const trimmed = (value: string): string | undefined =>
     value.trim().length > 0 ? value.trim() : undefined;
@@ -38,7 +53,7 @@ export function LocalizationPanel(props: {
     localization.mutate({
       localPath: props.localPath,
       baseRef: props.baseRef,
-      filePath: trimmed(filePath),
+      filePath: effectiveFile,
       mode,
       language: trimmed(language),
       key: trimmed(key),
@@ -47,16 +62,15 @@ export function LocalizationPanel(props: {
     });
   };
 
+  const askTarget = localization.data?.filePath ?? effectiveFile;
   const sendQuestion = (): void => {
     const asked = question.trim();
-    if (asked.length === 0) return;
-    const target =
-      localization.data?.filePath ?? trimmed(filePath) ?? "key.csv";
+    if (asked.length === 0 || askTarget === undefined) return;
     ask.mutate(
       {
         localPath: props.localPath,
         baseRef: props.baseRef,
-        filePath: target,
+        filePath: askTarget,
         question: asked,
         history,
         glossary: trimmed(props.glossary),
@@ -83,16 +97,46 @@ export function LocalizationPanel(props: {
     <div>
       <SectionCard
         title="Localization QA"
-        description="One table, one revision. Check finds integrity issues; translate previews AI-filled cells for download — nothing is written back to the repo."
+        description="One table, one revision. The table is found for you — just pick what to do."
+        extra={
+          detected ? (
+            <Tag color="green">key.csv auto-detected</Tag>
+          ) : (
+            <Tag color="orange">no key.csv found</Tag>
+          )
+        }
       >
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <Input
-            placeholder="Table file (default key.csv)"
-            value={filePath}
-            onChange={(event) => setFilePath(event.target.value)}
-            style={{ maxWidth: 280 }}
-          />
+        <Typography.Text type="secondary">
+          Table:{" "}
+          <Typography.Text code>
+            {effectiveFile ?? "key.csv (backend default)"}
+          </Typography.Text>
+        </Typography.Text>
+        {!showOverride ? (
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setShowOverride(true)}
+            style={{ paddingLeft: 8 }}
+          >
+            Use a different file
+          </Button>
+        ) : (
+          <div style={{ marginTop: 8, maxWidth: 360 }}>
+            <Input
+              placeholder="e.g. Assets/Localization/strings.csv"
+              value={override}
+              onChange={(event) => setOverride(event.target.value)}
+            />
+          </div>
+        )}
+
+        <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+          What should I do?
+        </Typography.Text>
+        <div style={{ marginTop: 8 }}>
           <Segmented<LocalizationMode>
+            className="cqa-mode-seg"
             options={[
               { value: "check", label: "Check" },
               { value: "translate", label: "Translate" },
@@ -100,24 +144,75 @@ export function LocalizationPanel(props: {
             value={mode}
             onChange={(value) => setMode(value)}
           />
-          <Input
-            placeholder="Language code (e.g. vi)"
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
-            style={{ maxWidth: 180 }}
-          />
-          <Input
-            placeholder="Single key (optional)"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            style={{ maxWidth: 220 }}
-          />
-          <Input
-            placeholder="Focus for the check (optional)"
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            style={{ maxWidth: 280 }}
-          />
+        </div>
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+          {MODE_HINTS[mode]}
+        </Typography.Text>
+
+        <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+          Which language?
+        </Typography.Text>
+        {localization.data && localization.data.languages.length > 0 && (
+          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {localization.data.languages.map((code) => (
+              <Tag
+                key={code}
+                color={language.trim() === code ? "blue" : "default"}
+                onClick={() => setLanguage(code)}
+                style={{ cursor: "pointer" }}
+              >
+                {code}
+              </Tag>
+            ))}
+          </div>
+        )}
+        <Input
+          placeholder="Language code, e.g. vi (leave empty for all languages)"
+          value={language}
+          onChange={(event) => setLanguage(event.target.value)}
+          style={{ marginTop: 8, maxWidth: 360 }}
+        />
+
+        <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+          Limit to one key? <Typography.Text type="secondary">(optional)</Typography.Text>
+        </Typography.Text>
+        <Input
+          placeholder="e.g. GAME_NAME"
+          value={key}
+          onChange={(event) => setKey(event.target.value)}
+          style={{ marginTop: 8, maxWidth: 360 }}
+        />
+
+        <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
+          Anything to focus on? <Typography.Text type="secondary">(optional)</Typography.Text>
+        </Typography.Text>
+        <Input
+          placeholder="e.g. only the new mission keys"
+          value={goal}
+          onChange={(event) => setGoal(event.target.value)}
+          style={{ marginTop: 8 }}
+        />
+
+        <Collapse
+          ghost
+          style={{ marginTop: 8 }}
+          items={[
+            {
+              key: "glossary",
+              label: "Game-term glossary for the AI (saved per project, optional)",
+              children: (
+                <Input.TextArea
+                  placeholder="e.g. Garden Invaders stays untranslated"
+                  value={props.glossary}
+                  onChange={(event) => props.onGlossaryChange(event.target.value)}
+                  rows={2}
+                />
+              ),
+            },
+          ]}
+        />
+
+        <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <Button type="primary" loading={localization.isPending} onClick={run}>
             {mode === "check" ? "Check localization" : "Preview translations"}
           </Button>
@@ -130,13 +225,6 @@ export function LocalizationPanel(props: {
             </Tag>
           )}
         </div>
-        <Input.TextArea
-          placeholder="Game-term glossary for the AI (e.g. Garden Invaders stays untranslated) — saved per project"
-          value={props.glossary}
-          onChange={(event) => props.onGlossaryChange(event.target.value)}
-          rows={2}
-          style={{ marginTop: 12 }}
-        />
         {localization.error instanceof ApiError && (
           <Alert
             type="error"
@@ -208,7 +296,12 @@ export function LocalizationPanel(props: {
                 onChange={(event) => setQuestion(event.target.value)}
                 onPressEnter={sendQuestion}
               />
-              <Button loading={ask.isPending} onClick={sendQuestion}>
+              <Button
+                loading={ask.isPending}
+                onClick={sendQuestion}
+                disabled={askTarget === undefined}
+                title={askTarget === undefined ? "Run a check first so I know which table to read." : undefined}
+              >
                 Ask
               </Button>
             </div>

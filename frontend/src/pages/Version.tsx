@@ -1,4 +1,4 @@
-import { Empty, Input, Tabs, Tag, Typography } from "antd";
+import { Empty, Tabs, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -93,51 +93,66 @@ export function VersionPage(): React.JSX.Element {
           items={[
             {
               key: "writers",
-              label: "Writers",
+              label: (
+                <span>
+                  <span className="cqa-tabdot cqa-tabdot-writers" />
+                  Writers
+                </span>
+              ),
               children: (
-                <div>
-                  <Input.TextArea
-                    placeholder="Team style for the writer (e.g. scope = game system, always include a test plan) — saved per project"
-                    value={instructions}
-                    onChange={(event) => setInstructions(event.target.value)}
-                    onBlur={() => updateProject(active.id, { writerInstructions: instructions })}
-                    rows={2}
-                    style={{ marginBottom: 12 }}
-                  />
+                <div className="cqa-tabpane cqa-tabpane-writers">
                   <WritersPanel
                     localPath={active.localPath}
                     baseRef={writerBase}
                     currentRef={ref}
                     instructions={instructions}
+                    onInstructionsChange={(value) => {
+                      setInstructions(value);
+                      updateProject(active.id, { writerInstructions: value });
+                    }}
                   />
                 </div>
               ),
             },
             {
               key: "localization",
-              label: "Localization",
+              label: (
+                <span>
+                  <span className="cqa-tabdot cqa-tabdot-loc" />
+                  Localization
+                </span>
+              ),
               children: (
-                <LocalizationPanel
-                  localPath={active.localPath}
-                  baseRef={ref}
-                  glossary={glossary}
-                  onGlossaryChange={(value) => {
-                    setGlossary(value);
-                    updateProject(active.id, { localizationGlossary: value });
-                  }}
-                />
+                <div className="cqa-tabpane cqa-tabpane-loc">
+                  <LocalizationPanel
+                    localPath={active.localPath}
+                    baseRef={ref}
+                    glossary={glossary}
+                    onGlossaryChange={(value) => {
+                      setGlossary(value);
+                      updateProject(active.id, { localizationGlossary: value });
+                    }}
+                  />
+                </div>
               ),
             },
             {
               key: "whatif",
-              label: "What-if",
+              label: (
+                <span>
+                  <span className="cqa-tabdot cqa-tabdot-whatif" />
+                  What-if
+                </span>
+              ),
               children: (
-                <WhatIfThread
-                  projectId={active.id}
-                  projectName={active.name}
-                  localPath={active.localPath}
-                  baseRef={ref}
-                />
+                <div className="cqa-tabpane cqa-tabpane-whatif">
+                  <WhatIfThread
+                    projectId={active.id}
+                    projectName={active.name}
+                    localPath={active.localPath}
+                    baseRef={ref}
+                  />
+                </div>
               ),
             },
           ]}

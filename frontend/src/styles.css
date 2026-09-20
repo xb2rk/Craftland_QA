@@ -410,3 +410,61 @@ body {
     padding: 16px !important;
   }
 }
+
+/* Version tools: one accent per tool so each tab feels like its own place. */
+.cqa-tabpane {
+  border-top: 3px solid transparent;
+  border-radius: 0 0 12px 12px;
+  padding-top: 12px;
+}
+
+.cqa-tabpane-writers {
+  border-top-color: #4f46e5;
+  background: linear-gradient(180deg, rgba(79, 70, 229, 0.06), transparent 120px);
+}
+
+.cqa-tabpane-loc {
+  border-top-color: #0d9488;
+  background: linear-gradient(180deg, rgba(13, 148, 136, 0.07), transparent 120px);
+}
+
+.cqa-tabpane-whatif {
+  border-top-color: #d97706;
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.07), transparent 120px);
+}
+
+.cqa-tabdot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.cqa-tabdot-writers {
+  background: #4f46e5;
+}
+
+.cqa-tabdot-loc {
+  background: #0d9488;
+}
+
+.cqa-tabdot-whatif {
+  background: #d97706;
+}
+
+/* High-contrast mode switcher: the selected option reads as a filled pill. */
+.cqa-mode-seg.ant-segmented {
+  background: #e2e8f0;
+}
+
+.cqa-mode-seg .ant-segmented-item {
+  font-weight: 600;
+  color: #475569;
+}
+
+.cqa-mode-seg .ant-segmented-item-selected {
+  background: #0f172a !important;
+  color: #fff !important;
+  font-weight: 700;
+}

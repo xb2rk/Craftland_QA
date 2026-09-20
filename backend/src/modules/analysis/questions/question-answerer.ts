@@ -5,10 +5,14 @@
  * call the AI workflow once, validate the answer shape, and persist the
  * exchange. Called by AnalysisService; no HTTP or queue concerns here.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
 import type { AppConfig } from "../../../config/env.js";
+import type { WorkflowFile } from "../../ai/context-builder.js";
 import { AppError, NotFoundError } from "../../../shared/errors.js";
 import { getLogger } from "../../../shared/logger.js";
 import type { InseaWorkflowClient } from "../../ai/insea.client.js";
@@ -87,6 +91,36 @@ export async function answerRunQuestion(
     },
   });
   let raw: Record<string, unknown>;
+  // Insea requires a non-empty DataList: attach the run digest the question
+  // is about as the evidence file.
+  const digestLines = [
+    `Question: ${input.question}`,
+    `Lens: ${run.lens ?? "pre_merge"}`,
+    `Revision: ${run.baseRef} -> ${run.currentRef}`,
+    `Deterministic findings: ${run.findings.length}`,
+    ...run.findings.slice(0, 40).map(
+      (finding) =>
+        `- [${finding.severity}] ${finding.code}: ${finding.message} (${finding.filePath}${finding.line !== undefined ? `:${finding.line}` : ""})`,
+    ),
+    "",
+    "AI assessment:",
+    typeof summary.overall_assessment === "string"
+      ? summary.overall_assessment.slice(0, 2000)
+      : "No AI assessment.",
+  ];
+  const digestBody = digestLines.join("\n").slice(0, 12000);
+  const questionId = randomUUID();
+  const digestPath = join(tmpdir(), `question-${questionId}.txt`);
+  await writeFile(digestPath, digestBody, "utf8");
+  const digestBytes = Buffer.byteLength(digestBody, "utf8");
+  const digestSha = createHash("sha256").update(digestBody, "utf8").digest("hex");
+  const digestFile: WorkflowFile = {
+    absolutePath: digestPath,
+    uploadName: "run-digest.txt",
+    contentType: "text/plain",
+    sha256: digestSha,
+    sizeBytes: digestBytes,
+  };
   try {
     raw = await deps.aiClient.run({
       prompt,
@@ -97,8 +131,20 @@ export async function answerRunQuestion(
         stage: "followup_qa",
         lens: run.lens ?? "pre_merge",
         question: input.question,
+        attachments: [
+          {
+            id: "question-file-1",
+            upload_name: digestFile.uploadName,
+            relative_path: "(generated run digest)",
+            revision: run.currentRef,
+            kind: "digest",
+            content_type: digestFile.contentType,
+            size_bytes: digestBytes,
+            sha256: digestSha,
+          },
+        ],
       },
-      files: [],
+      files: [digestFile],
       requestId: randomUUID(),
     });
   } catch (error) {
@@ -108,6 +154,8 @@ export async function answerRunQuestion(
       502,
       "The AI workflow did not answer the question.",
     );
+  } finally {
+    await unlink(digestPath).catch(() => undefined);
   }
   const parsed = followupAnswerSchema.safeParse(raw);
   if (!parsed.success) {

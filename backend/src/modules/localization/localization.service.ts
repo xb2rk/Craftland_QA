@@ -295,6 +295,19 @@ interface LocCandidate {
   tempPath?: string;
 }
 
+/**
+ * Craftland convention: the localization table is key.csv. When the caller
+ * does not scope a file, check it first so one-table repos resolve to the
+ * file the team expects.
+ */
+function preferKeyCsv(names: string[]): string[] {
+  return [...names].sort((a, string_) => {
+    const aKey = a.replace(/\\/g, "/").toLowerCase().endsWith("key.csv") ? 0 : 1;
+    const bKey = string_.replace(/\\/g, "/").toLowerCase().endsWith("key.csv") ? 0 : 1;
+    return aKey - bKey;
+  });
+}
+
 async function collectCandidates(
   root: string,
   files: Array<{ relativePath: string; absolutePath: string }>,
@@ -321,7 +334,7 @@ async function collectCandidates(
         .split("\n")
         .map((line) => line.trim())
         .filter(matches);
-  const limited = wanted !== undefined ? names.slice(0, 1) : names.slice(0, MAX_LOC_FILES);
+  const limited = wanted !== undefined ? names.slice(0, 1) : preferKeyCsv(names).slice(0, MAX_LOC_FILES);
   const candidates: LocCandidate[] = [];
   let totalBytes = 0;
   for (const name of limited) {

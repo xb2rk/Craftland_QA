@@ -6,12 +6,14 @@
  * deterministic template still answers; with a failing AI the template is
  * returned alongside the error. Never queues a run — writers are instant.
  */
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
 import type { AppConfig } from "../../config/env.js";
+import type { WorkflowFile } from "../ai/context-builder.js";
 import { getLogger } from "../../shared/logger.js";
 import {
   buildWriterPrompt,
@@ -115,29 +117,60 @@ export async function draftWriterOutput(
       instructions: input.instructions,
     });
     const requestId = randomUUID();
-    const raw = await deps.aiClient.run({
-      prompt,
-      manifest: {
-        schema_version: "1.0",
-        request_id: requestId,
-        stage: "writer",
-        kind: input.kind,
-        base_ref: input.baseRef,
-        current_ref: input.currentRef,
-      },
-      files: [],
-      requestId,
-    });
-    const parsed = writerAnswerSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw new Error("Writer answer was not valid JSON.");
-    }
-    return {
-      kind: input.kind,
-      text: parsed.data.text,
-      aiStatus: "completed",
-      conventions: conventions.map((entry) => entry.source),
+    // Insea requires a non-empty DataList: attach the diff excerpt the draft
+    // is based on as the evidence file.
+    const diffBody = (comparison.unifiedDiff ?? "").slice(0, MAX_DIFF_EXCERPT);
+    const evidenceBody = diffBody.length > 0 ? diffBody : template;
+    const evidencePath = join(tmpdir(), `writer-${requestId}.txt`);
+    await writeFile(evidencePath, evidenceBody, "utf8");
+    const evidenceBytes = Buffer.byteLength(evidenceBody, "utf8");
+    const evidenceSha = createHash("sha256").update(evidenceBody, "utf8").digest("hex");
+    const evidenceFile: WorkflowFile = {
+      absolutePath: evidencePath,
+      uploadName: "writer-diff.txt",
+      contentType: "text/plain",
+      sha256: evidenceSha,
+      sizeBytes: evidenceBytes,
     };
+    try {
+      const raw = await deps.aiClient.run({
+        prompt,
+        manifest: {
+          schema_version: "1.0",
+          request_id: requestId,
+          stage: "writer",
+          kind: input.kind,
+          base_ref: input.baseRef,
+          current_ref: input.currentRef,
+          attachments: [
+            {
+              id: "writer-file-1",
+              upload_name: evidenceFile.uploadName,
+              relative_path: "(generated diff excerpt)",
+              revision: input.currentRef,
+              kind: "diff",
+              content_type: evidenceFile.contentType,
+              size_bytes: evidenceBytes,
+              sha256: evidenceSha,
+            },
+          ],
+        },
+        files: [evidenceFile],
+        requestId,
+      });
+      const parsed = writerAnswerSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error("Writer answer was not valid JSON.");
+      }
+      return {
+        kind: input.kind,
+        text: parsed.data.text,
+        aiStatus: "completed",
+        conventions: conventions.map((entry) => entry.source),
+      };
+    } finally {
+      await unlink(evidencePath).catch(() => undefined);
+    }
   } catch (error) {
     getLogger().warn({ err: error }, "writer AI stage failed, returning template");
     return {
