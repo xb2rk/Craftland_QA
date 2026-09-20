@@ -7,6 +7,8 @@
  * returned alongside the error. Never queues a run — writers are instant.
  */
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 
 import type { AppConfig } from "../../config/env.js";
@@ -35,12 +37,16 @@ export interface DraftWriterInput {
   currentRef: string;
   kind: WriterKind;
   goal?: string;
+  /** Per-project author instructions, obeyed by the AI draft. */
+  instructions?: string;
 }
 
 export interface WriterDraft {
   kind: WriterKind;
   text: string;
   aiStatus: AiStatus;
+  /** Convention files discovered in the target repo and fed to the prompt. */
+  conventions: string[];
   error?: string;
 }
 
@@ -74,6 +80,7 @@ export async function draftWriterOutput(
     comparison.baseCommit,
     comparison.currentCommit,
   );
+  const conventions = await readRepoConventions(inspection.rootPath);
   const template = deterministicWriterText(
     input.kind,
     input.baseRef,
@@ -83,7 +90,12 @@ export async function draftWriterOutput(
   );
 
   if (deps.aiClient === null || deps.config.ai.configured === false) {
-    return { kind: input.kind, text: template, aiStatus: "not_configured" };
+    return {
+      kind: input.kind,
+      text: template,
+      aiStatus: "not_configured",
+      conventions: conventions.map((entry) => entry.source),
+    };
   }
   try {
     const prompt = buildWriterPrompt({
@@ -94,6 +106,13 @@ export async function draftWriterOutput(
       commitSubjects: subjects,
       diffExcerpt: (comparison.unifiedDiff ?? "").slice(0, MAX_DIFF_EXCERPT),
       goal: input.goal,
+      conventions:
+        conventions.length > 0
+          ? conventions
+              .map((entry) => `--- ${entry.source} ---\n${entry.excerpt}`)
+              .join("\n")
+          : undefined,
+      instructions: input.instructions,
     });
     const requestId = randomUUID();
     const raw = await deps.aiClient.run({
@@ -113,16 +132,51 @@ export async function draftWriterOutput(
     if (!parsed.success) {
       throw new Error("Writer answer was not valid JSON.");
     }
-    return { kind: input.kind, text: parsed.data.text, aiStatus: "completed" };
+    return {
+      kind: input.kind,
+      text: parsed.data.text,
+      aiStatus: "completed",
+      conventions: conventions.map((entry) => entry.source),
+    };
   } catch (error) {
     getLogger().warn({ err: error }, "writer AI stage failed, returning template");
     return {
       kind: input.kind,
       text: template,
       aiStatus: "failed",
+      conventions: conventions.map((entry) => entry.source),
       error: "The AI workflow did not answer; a template draft is returned instead.",
     };
   }
+}
+
+export interface RepoConvention {
+  source: string;
+  excerpt: string;
+}
+
+const CONVENTION_FILES = [
+  "AGENTS.md",
+  "CONTRIBUTING.md",
+  ".github/pull_request_template.md",
+];
+
+const MAX_CONVENTION_CHARS = 4000;
+
+/**
+ * Read team conventions from the target repo worktree when present. Missing
+ * files are skipped silently — most repos have none of these.
+ */
+export async function readRepoConventions(root: string): Promise<RepoConvention[]> {
+  const found: RepoConvention[] = [];
+  for (const source of CONVENTION_FILES) {
+    const content = await readFile(join(root, source), "utf8").catch(
+      () => null,
+    );
+    if (content === null || content.trim().length === 0) continue;
+    found.push({ source, excerpt: content.slice(0, MAX_CONVENTION_CHARS) });
+  }
+  return found;
 }
 
 async function readCommitSubjects(

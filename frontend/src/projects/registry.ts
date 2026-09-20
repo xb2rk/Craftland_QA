@@ -16,6 +16,12 @@ export interface SavedProject {
   lastLens?: string;
   lastVerbosity?: string;
   comparePresets?: ComparePreset[];
+  /** Single ref last used on the Version tools page. */
+  lastVersionRef?: string;
+  /** Team style notes sent to the commit/PR writer. */
+  writerInstructions?: string;
+  /** Game-term glossary sent with localization prompts. */
+  localizationGlossary?: string;
 }
 
 const PROJECTS_KEY = "cqa.projects.v1";

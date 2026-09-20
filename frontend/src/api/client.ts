@@ -4,7 +4,9 @@ import {
   type AnalysisRun,
   type BrowseResult,
   type Health,
+  type LocalizationAnswer,
   type LocalizationCheckOutput,
+  type LocalizationMode,
   type ProjectBranch,
   type ProjectCommit,
   type ProjectDiffResult,
@@ -118,6 +120,7 @@ export const api = {
     currentRef: string;
     kind: WriterKind;
     goal?: string;
+    instructions?: string;
   }): Promise<WriterDraft> {
     return requestJson<WriterDraft>("/api/projects/write", {
       method: "POST",
@@ -127,9 +130,27 @@ export const api = {
   runLocalization(input: {
     localPath: string;
     baseRef: string;
+    filePath?: string;
+    mode?: LocalizationMode;
+    language?: string;
+    key?: string;
     goal?: string;
+    glossary?: string;
   }): Promise<LocalizationCheckOutput> {
     return requestJson<LocalizationCheckOutput>("/api/projects/localization", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  askLocalization(input: {
+    localPath: string;
+    baseRef?: string;
+    filePath: string;
+    question: string;
+    history?: Array<{ question: string; answer: string }>;
+    glossary?: string;
+  }): Promise<LocalizationAnswer> {
+    return requestJson<LocalizationAnswer>("/api/projects/localization/ask", {
       method: "POST",
       body: JSON.stringify(input),
     });

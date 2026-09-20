@@ -22,6 +22,10 @@ export interface BuildWriterPromptInput {
   commitSubjects: string[];
   diffExcerpt: string;
   goal?: string;
+  /** Repository convention excerpts (AGENTS.md, PR template, ...). */
+  conventions?: string;
+  /** Per-project author instructions. */
+  instructions?: string;
 }
 
 const COMMIT_RULES: readonly string[] = [
@@ -37,6 +41,7 @@ const PR_RULES: readonly string[] = [
   "## Summary (2-4 sentences: what changed and why it matters to players/designers)",
   "## Changes (bullets grouped by area; cite repository-relative file paths)",
   "## Test plan (numbered checklist a reviewer can execute)",
+  "When repository conventions include a PR template, follow its headings instead of the sections above.",
   "Keep it factual: only changes present in the evidence. Mark anything inferred with _(inferred)_." ,
 ];
 
@@ -63,6 +68,12 @@ export function buildWriterPrompt(input: BuildWriterPromptInput): string {
     "Do not add Markdown outside the JSON object (the text value itself may contain Markdown for kind=pr).",
     ...(input.goal !== undefined && input.goal.length > 0
       ? [`Author context: ${input.goal}`]
+      : []),
+    ...(input.conventions !== undefined && input.conventions.length > 0
+      ? [`Repository conventions (obey them):\n${input.conventions}`]
+      : []),
+    ...(input.instructions !== undefined && input.instructions.length > 0
+      ? [`Author instructions (obey them): ${input.instructions}`]
       : []),
     `Changed files (${input.changedFiles.length}): ${files.length > 0 ? files : "none"}.`,
     `Commits in range:\n${subjects}`,

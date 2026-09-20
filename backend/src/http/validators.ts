@@ -49,12 +49,37 @@ export const writerBodySchema = z.object({
   currentRef: z.string().trim().min(1).max(255).default("WORKTREE"),
   kind: z.enum(["commit", "pr"]),
   goal: z.string().trim().max(4000).optional(),
+  instructions: z.string().trim().max(2000).optional(),
 });
+
+export const localizationModeSchema = z.enum(["check", "translate"]);
 
 export const localizationBodySchema = z.object({
   localPath: z.string().trim().min(1).max(1024),
   baseRef: z.string().trim().min(1).max(255).default("WORKTREE"),
   goal: z.string().trim().max(4000).optional(),
+  filePath: z.string().trim().min(1).max(1024).optional(),
+  mode: localizationModeSchema.default("check"),
+  language: z.string().trim().min(1).max(64).optional(),
+  key: z.string().trim().min(1).max(255).optional(),
+  glossary: z.string().trim().max(4000).optional(),
+});
+
+export const localizationAskBodySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  baseRef: z.string().trim().min(1).max(255).default("WORKTREE"),
+  filePath: z.string().trim().min(1).max(1024),
+  question: z.string().trim().min(1).max(2000),
+  history: z
+    .array(
+      z.object({
+        question: z.string().trim().max(2000),
+        answer: z.string().trim().max(8000),
+      }),
+    )
+    .max(20)
+    .optional(),
+  glossary: z.string().trim().max(4000).optional(),
 });
 
 export const askQuestionBodySchema = z.object({

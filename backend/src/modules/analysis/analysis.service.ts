@@ -45,7 +45,10 @@ import {
   type WriterDraft,
 } from "../writers/writer.service.js";
 import {
+  askLocalizationQuestion,
   runLocalizationCheck,
+  type AskLocalizationInput,
+  type LocalizationAnswer,
   type LocalizationCheckOutput,
   type RunLocalizationInput,
 } from "../localization/localization.service.js";
@@ -83,6 +86,8 @@ export interface CompareAnalysesInput {
 export interface DraftWriterRequest extends DraftWriterInput {}
 
 export interface RunLocalizationRequest extends RunLocalizationInput {}
+
+export interface AskLocalizationRequest extends AskLocalizationInput {}
 
 export class AnalysisService {
   private readonly queue = new JobQueue();
@@ -228,6 +233,13 @@ export class AnalysisService {
 
   runLocalization(input: RunLocalizationRequest): Promise<LocalizationCheckOutput> {
     return runLocalizationCheck(
+      { config: this.config, aiClient: this.aiClient },
+      input,
+    );
+  }
+
+  askLocalization(input: AskLocalizationRequest): Promise<LocalizationAnswer> {
+    return askLocalizationQuestion(
       { config: this.config, aiClient: this.aiClient },
       input,
     );

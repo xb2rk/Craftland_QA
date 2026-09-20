@@ -17,6 +17,35 @@ export interface LocalizationFileInput {
 export interface LocalizationCheckResult {
   filesChecked: string[];
   findings: Finding[];
+  /** Language codes from the LanguageKey row, when the table has one. */
+  languages: string[];
+}
+
+/** A key.csv-style table: first header cell Key, second row LanguageKey codes. */
+export interface LocalizationTableShape {
+  keyColumn: string;
+  languages: string[];
+  hasLanguageRow: boolean;
+}
+
+/**
+ * Read the table shape: header row plus an optional LanguageKey second row
+ * mapping each value column to a language code (e.g. "vi" → Vietnamese).
+ */
+export function readLocalizationShape(content: string): LocalizationTableShape {
+  const rows = parseCsvContent(content);
+  const header = rows[0] ?? [];
+  const second = rows[1] ?? [];
+  const hasLanguageRow =
+    (second[0] ?? "").trim().toLowerCase() === "languagekey";
+  const languages = hasLanguageRow
+    ? header.slice(1).map((_, index) => (second[index + 1] ?? "").trim())
+    : [];
+  return {
+    keyColumn: header.length > 0 ? header[0]!.trim() : "",
+    languages,
+    hasLanguageRow,
+  };
 }
 
 const LOCALIZATION_BASENAMES = new Set([
@@ -45,38 +74,48 @@ export function checkLocalizationFiles(
 ): LocalizationCheckResult {
   const findings: Finding[] = [];
   const filesChecked: string[] = [];
+  const languageSet = new Set<string>();
   for (const file of files) {
     filesChecked.push(file.relativePath);
-    const header = parseCsvContent(file.content)[0] ?? [];
-    const keyColumn = header.length > 0 ? header[0] : "";
+    const shape = readLocalizationShape(file.content);
+    for (const language of shape.languages) {
+      if (language !== "") languageSet.add(language);
+    }
     findings.push(
       ...auditCsvContent(file.content, {
         filePath: file.relativePath,
-        keyColumns: keyColumn === "" ? [] : [keyColumn],
+        keyColumns: shape.keyColumn === "" ? [] : [shape.keyColumn],
       }).findings,
     );
-    findings.push(...checkEmptyValues(file.relativePath, file.content, header));
+    findings.push(...checkEmptyValues(file.relativePath, file.content, shape));
   }
-  return { filesChecked, findings };
+  return { filesChecked, findings, languages: [...languageSet].sort() };
 }
 
-/** Flag empty value cells, naming the row key and column so designers can fix them. */
+/** Flag empty value cells, naming the row key and language so QA can fix them. */
 function checkEmptyValues(
   filePath: string,
   content: string,
-  header: string[],
+  shape: LocalizationTableShape,
 ): Finding[] {
+  const header = parseCsvContent(content)[0] ?? [];
   if (header.length === 0) return [];
   const findings: Finding[] = [];
+  // Data starts after the header and the optional LanguageKey/type row.
   const dataRows = parseCsvContent(content).slice(2);
   dataRows.forEach((row, index) => {
     const key = row[0] ?? "";
     for (let column = 1; column < header.length; column += 1) {
       if ((row[column] ?? "") === "") {
+        const language = shape.languages[column - 1] ?? "";
+        const where =
+          language !== ""
+            ? `in ${language} ("${header[column] ?? column}")`
+            : `in column "${header[column] ?? column}"`;
         findings.push({
           code: "LOC_EMPTY_VALUE",
           severity: "warning",
-          message: `Empty value for key "${key}" in column "${header[column] ?? column}".`,
+          message: `Empty value for key "${key}" ${where}.`,
           filePath,
           line: index + 3,
         });

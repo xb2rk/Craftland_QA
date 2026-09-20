@@ -113,6 +113,12 @@ export function useLocalizationMutation() {
   });
 }
 
+export function useLocalizationAskMutation() {
+  return useMutation({
+    mutationFn: api.askLocalization,
+  });
+}
+
 export function useInspectQuery(localPath: string | undefined) {
   return useQuery<ProjectInspection>({
     queryKey: ["inspect", localPath],

@@ -10,7 +10,7 @@ export function buildOpenApiDocument(): Record<string, unknown> {
     openapi: "3.0.3",
     info: {
       title: "Craftland Quality Analyzer",
-      version: "2.1.0",
+      version: "2.2.0",
     },
     paths: {
       "/api/health": { get: { summary: "Service health" } },
@@ -21,7 +21,8 @@ export function buildOpenApiDocument(): Record<string, unknown> {
       "/api/projects/diff": { post: { summary: "Preview the file diff between two refs without running AI" } },
       "/api/projects/whatif": { post: { summary: "Evaluate a hypothetical single-cell config edit" } },
       "/api/projects/write": { post: { summary: "Draft a commit message or PR description for a ref pair" } },
-      "/api/projects/localization": { post: { summary: "Check localization tables for key and row integrity" } },
+      "/api/projects/localization": { post: { summary: "Check or translate localization tables for one revision" } },
+      "/api/projects/localization/ask": { post: { summary: "Ask a QA question about one localization table" } },
       "/api/analysis-runs": {
         post: { summary: "Start an analysis run" },
         get: { summary: "List analysis runs" },

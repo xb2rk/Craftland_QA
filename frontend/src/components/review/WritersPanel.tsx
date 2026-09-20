@@ -6,15 +6,17 @@ import { ApiError, type WriterKind } from "../../api/types.js";
 import { SectionCard } from "../ui/SectionCard.js";
 
 /**
- * WritersPanel drafts release text for the pair under review: a
- * conventional-commit message or a PR description. Output is derived from
- * the same diff the review uses; the AI only polishes the wording, and the
- * deterministic template applies when the AI is off or fails.
+ * WritersPanel drafts release text for one version: a conventional-commit
+ * message or a PR description for the change at that ref. The backend reads
+ * repo conventions (AGENTS.md, CONTRIBUTING.md, PR templates) and applies
+ * the author's instructions; a deterministic template applies when the AI
+ * is off or fails.
  */
 export function WritersPanel(props: {
   localPath: string;
   baseRef: string;
   currentRef: string;
+  instructions?: string;
 }): React.JSX.Element {
   const [kind, setKind] = useState<WriterKind>("commit");
   const [goal, setGoal] = useState("");
@@ -27,6 +29,10 @@ export function WritersPanel(props: {
       currentRef: props.currentRef,
       kind,
       goal: goal.trim().length > 0 ? goal.trim() : undefined,
+      instructions:
+        props.instructions !== undefined && props.instructions.trim().length > 0
+          ? props.instructions.trim()
+          : undefined,
     });
   };
 
@@ -68,9 +74,16 @@ export function WritersPanel(props: {
         <SectionCard
           title={kind === "commit" ? "Commit message" : "PR description"}
           extra={
-            writer.data.aiStatus !== "completed" ? (
-              <Typography.Text type="secondary">deterministic template</Typography.Text>
-            ) : undefined
+            <span>
+              {writer.data.conventions.length > 0 && (
+                <Typography.Text type="secondary" style={{ marginRight: 8 }}>
+                  follows {writer.data.conventions.join(", ")}
+                </Typography.Text>
+              )}
+              {writer.data.aiStatus !== "completed" && (
+                <Typography.Text type="secondary">deterministic template</Typography.Text>
+              )}
+            </span>
           }
           style={{ marginTop: 12 }}
         >

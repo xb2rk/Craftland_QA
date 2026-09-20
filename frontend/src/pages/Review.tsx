@@ -1,6 +1,6 @@
 import { Alert, App, Button, Empty, Input, Select, Skeleton, Table, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   useHealth,
@@ -12,11 +12,8 @@ import { ApiError, type AnalysisLens, type Verbosity } from "../api/types.js";
 import { useProjects } from "../app/project-context.js";
 import { DiffViewer } from "../components/DiffViewer.js";
 import { type ExtraTemplate } from "../components/GoalField.js";
-import { WhatIfThread } from "../components/WhatIfThread.js";
 import { AiReviewPanel } from "../components/review/AiReviewPanel.js";
 import { CompareCard } from "../components/review/CompareCard.js";
-import { LocalizationPanel } from "../components/review/LocalizationPanel.js";
-import { WritersPanel } from "../components/review/WritersPanel.js";
 import { SectionCard } from "../components/ui/SectionCard.js";
 import { newProjectId } from "../projects/registry.js";
 import { loadSettings } from "../settings/store.js";
@@ -62,9 +59,7 @@ export function ReviewPage(): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get("tab");
   const [tab, setTab] = useState(
-    initialTab === "whatif" || initialTab === "writers" || initialTab === "localization"
-      ? initialTab
-      : "ai",
+    initialTab === "diff" || initialTab === "files" ? initialTab : "ai",
   );
   const { message } = App.useApp();
 
@@ -155,6 +150,15 @@ export function ReviewPage(): React.JSX.Element {
   );
 
   const presets = active?.comparePresets ?? [];
+
+  // Single-version tools moved to the Version tools page; deep links follow.
+  const movedTab =
+    initialTab === "whatif" || initialTab === "writers" || initialTab === "localization"
+      ? initialTab
+      : null;
+  if (movedTab !== null) {
+    return <Navigate to={`/version?tab=${movedTab}`} replace />;
+  }
 
   if (!active) {
     return (
@@ -454,36 +458,6 @@ export function ReviewPage(): React.JSX.Element {
                       />
                     </SectionCard>
                   ),
-              },
-              {
-                key: "writers",
-                label: "Writers",
-                children: (
-                  <WritersPanel
-                    localPath={active.localPath}
-                    baseRef={baseRef}
-                    currentRef={currentRef}
-                  />
-                ),
-              },
-              {
-                key: "localization",
-                label: "Localization",
-                children: (
-                  <LocalizationPanel localPath={active.localPath} baseRef={currentRef} />
-                ),
-              },
-              {
-                key: "whatif",
-                label: "What-if",
-                children: (
-                  <WhatIfThread
-                    projectId={active.id}
-                    projectName={active.name}
-                    localPath={active.localPath}
-                    baseRef={currentRef}
-                  />
-                ),
               },
             ]}
           />

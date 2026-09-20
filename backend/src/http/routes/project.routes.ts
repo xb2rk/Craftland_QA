@@ -18,6 +18,7 @@ import {
 import {
   browseProjectsQuerySchema,
   inspectProjectBodySchema,
+  localizationAskBodySchema,
   localizationBodySchema,
   projectDiffBodySchema,
   projectRefsQuerySchema,
@@ -121,6 +122,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps): voi
           currentRef: body.currentRef,
           kind: body.kind,
           goal: body.goal,
+          instructions: body.instructions,
         }),
       );
     }),
@@ -135,6 +137,28 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps): voi
           localPath: body.localPath,
           baseRef: body.baseRef,
           goal: body.goal,
+          filePath: body.filePath,
+          mode: body.mode,
+          language: body.language,
+          key: body.key,
+          glossary: body.glossary,
+        }),
+      );
+    }),
+  );
+
+  app.post(
+    "/api/projects/localization/ask",
+    asyncRoute(async (req, res) => {
+      const body = localizationAskBodySchema.parse(req.body);
+      res.json(
+        await deps.analysisService.askLocalization({
+          localPath: body.localPath,
+          baseRef: body.baseRef,
+          filePath: body.filePath,
+          question: body.question,
+          history: body.history,
+          glossary: body.glossary,
         }),
       );
     }),

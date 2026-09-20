@@ -3,6 +3,7 @@ import {
   FileSearchOutlined,
   HistoryOutlined,
   SettingOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import { Alert, Dropdown, Layout, Menu, Select, Space, Typography } from "antd";
 import { useState } from "react";
@@ -18,19 +19,22 @@ const { Content, Header, Sider } = Layout;
 const MENU_ITEMS = [
   { key: "/", icon: <DashboardOutlined />, label: <Link to="/">Overview</Link> },
   { key: "/review", icon: <FileSearchOutlined />, label: <Link to="/review">Review</Link> },
+  { key: "/version", icon: <ToolOutlined />, label: <Link to="/version">Version tools</Link> },
   { key: "/runs", icon: <HistoryOutlined />, label: <Link to="/runs">Runs</Link> },
   { key: "/settings", icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
 ];
 
 function selectedKey(pathname: string): string {
-  if (pathname.startsWith("/review") || pathname.startsWith("/whatif")) return "/review";
+  if (pathname.startsWith("/review")) return "/review";
+  if (pathname.startsWith("/version") || pathname.startsWith("/whatif")) return "/version";
   if (pathname.startsWith("/runs")) return "/runs";
   if (pathname.startsWith("/settings")) return "/settings";
   return "/";
 }
 
 function crumb(pathname: string): string {
-  if (pathname.startsWith("/review") || pathname.startsWith("/whatif")) return "Review";
+  if (pathname.startsWith("/review")) return "Review";
+  if (pathname.startsWith("/version") || pathname.startsWith("/whatif")) return "Version tools";
   if (/^\/runs\/[^/]+/.test(pathname)) return "Runs / Run detail";
   if (pathname.startsWith("/runs")) return "Runs";
   if (pathname.startsWith("/settings")) return "Settings";

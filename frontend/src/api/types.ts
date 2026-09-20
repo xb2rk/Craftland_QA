@@ -114,16 +114,40 @@ export interface WriterDraft {
   kind: WriterKind;
   text: string;
   aiStatus: "not_configured" | "completed" | "failed" | "skipped";
+  /** Convention sources discovered in the repo (e.g. "AGENTS.md"). */
+  conventions: string[];
   error?: string;
+}
+
+export type LocalizationMode = "check" | "translate";
+
+export interface LocalizationTranslation {
+  key: string;
+  language: string;
+  oldValue: string;
+  newValue: string;
 }
 
 export interface LocalizationCheckOutput {
   baseRef: string;
+  /** The file actually checked, when the request scoped to one file. */
+  filePath?: string;
+  /** Language codes found in LanguageKey rows. */
+  languages: string[];
   filesChecked: string[];
   findings: Finding[];
   aiReport?: NormalizedAiReport | Record<string, unknown>;
   aiStatus: "not_configured" | "completed" | "failed";
+  /** Proposed cell fills, translate mode only. */
+  translations: LocalizationTranslation[];
+  /** CSV with the translations applied, translate mode only. */
+  translatedCsv?: string;
   error?: string;
+}
+
+export interface LocalizationAnswer {
+  answer: string;
+  citations: string[];
 }
 
 export interface NormalizedAiReport {
