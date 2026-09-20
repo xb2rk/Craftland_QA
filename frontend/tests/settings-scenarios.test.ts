@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { unknownQuestion } from "../src/components/AiReport.js";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "../src/settings/store.js";
-import { loadScenarios, saveScenarios } from "../src/whatif/scenarios.js";
+import { loadThreads, saveThreads } from "../src/whatif/threads.js";
 
 beforeEach(() => {
   localStorage.clear();
@@ -39,28 +39,24 @@ describe("settings store", () => {
   });
 });
 
-describe("scenario store", () => {
-  it("round-trips scenarios", () => {
-    saveScenarios([
+describe("thread store", () => {
+  it("round-trips threads", () => {
+    saveThreads([
       {
-        id: "s1",
+        id: "t1",
         projectId: "p",
-        filePath: "a.csv",
         baseRef: "HEAD",
-        keyColumn: "Id",
-        keyValue: "1",
-        column: "Price",
-        newValue: "9",
-        goal: "",
-        result: null,
+        question: "What if Price goes to 9?",
+        notes: [],
+        status: "needs-detail",
         createdAt: "x",
       },
     ]);
-    expect(loadScenarios()).toHaveLength(1);
+    expect(loadThreads()).toHaveLength(1);
   });
 
   it("returns [] for corrupt payloads", () => {
-    localStorage.setItem("cqa.whatif.scenarios.v1", "[1,2]");
-    expect(loadScenarios()).toEqual([]);
+    localStorage.setItem("cqa.whatif.threads.v1", "[1,2]");
+    expect(loadThreads()).toEqual([]);
   });
 });

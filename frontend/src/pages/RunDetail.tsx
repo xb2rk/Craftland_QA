@@ -1,15 +1,19 @@
-import { Alert, Button, Card, Skeleton, Tabs, Tag, Typography } from "antd";
+import { Alert, Button, Skeleton, Tabs, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAnalysis, useHealth, useStartAnalysisMutation } from "../api/hooks.js";
 import { ApiError } from "../api/types.js";
 import { AiReport, unknownQuestion } from "../components/AiReport.js";
+import { DiffViewer } from "../components/DiffViewer.js";
 import { FixChecklist } from "../components/FixChecklist.js";
 import { QuestionDrawer } from "../components/QuestionDrawer.js";
 import { SystemFindings } from "../components/SystemFindings.js";
+import { SectionCard } from "../components/ui/SectionCard.js";
+import { StatusDot } from "../components/ui/StatusDot.js";
 import { Verdict } from "../components/Verdict.js";
 import { exportDiffText, exportRunJson } from "../components/run-io.js";
+import { runStatusTone } from "../theme/tokens.js";
 
 export function RunDetailPage(): React.JSX.Element {
   const { id } = useParams();
@@ -52,10 +56,10 @@ export function RunDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Card
+      <SectionCard
         title={run.goal}
         extra={
-          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span className="cqa-actions">
             {run.kind === "comparison" && <Tag color="purple">comparison</Tag>}
             {run.lens && run.lens !== "pre_merge" && (
               <Tag color="blue">{run.lens.replace(/_/g, " ")}</Tag>
@@ -64,7 +68,13 @@ export function RunDetailPage(): React.JSX.Element {
             {run.focusPaths && run.focusPaths.length > 0 && (
               <Tag color="purple">{run.focusPaths.length} focused</Tag>
             )}
-            <Tag>{run.status}</Tag>
+            <span className="cqa-pill">
+              <StatusDot
+                color={runStatusTone(run.status).tone}
+                pulse={runStatusTone(run.status).pulse}
+                label={run.status}
+              />
+            </span>
             {run.kind === "analysis" && (
               <Button
                 size="small"
@@ -114,10 +124,10 @@ export function RunDetailPage(): React.JSX.Element {
         {run.error && (
           <Alert type="error" showIcon message={run.error} style={{ marginTop: 12 }} />
         )}
-      </Card>
+      </SectionCard>
 
+      <SectionCard bodyStyle={{ paddingTop: 8 }}>
       <Tabs
-        style={{ marginTop: 16 }}
         defaultActiveKey="verdict"
         items={[
           {
@@ -159,6 +169,17 @@ export function RunDetailPage(): React.JSX.Element {
             ),
           },
           {
+            key: "changes",
+            label: `Changes (${run.comparison?.changedFiles.length ?? 0})`,
+            children: (
+              <DiffViewer
+                diff={run.comparison?.unifiedDiff}
+                truncated={run.comparison?.diffTruncated}
+                files={run.comparison?.changedFiles}
+              />
+            ),
+          },
+          {
             key: "raw",
             label: "Raw JSON",
             children: (
@@ -169,6 +190,7 @@ export function RunDetailPage(): React.JSX.Element {
           },
         ]}
       />
+      </SectionCard>
 
       <QuestionDrawer
         runId={run.id}

@@ -1,7 +1,7 @@
 import {
   Alert,
+  App,
   Button,
-  Card,
   Col,
   Empty,
   Input,
@@ -9,14 +9,13 @@ import {
   Select,
   Skeleton,
   Space,
-  Statistic,
   Table,
   Tabs,
   Tag,
   Typography,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   useHealth,
@@ -30,16 +29,25 @@ import { DiffViewer } from "../components/DiffViewer.js";
 import { GoalField, type ExtraTemplate } from "../components/GoalField.js";
 import { LensPicker } from "../components/LensPicker.js";
 import { RefPicker } from "../components/RefPicker.js";
+import { SectionCard } from "../components/ui/SectionCard.js";
+import { StatTile } from "../components/ui/StatTile.js";
 import { VerbosityPicker } from "../components/VerbosityPicker.js";
+import { WhatIfThread } from "../components/WhatIfThread.js";
 import { newProjectId } from "../projects/registry.js";
 import { loadSettings } from "../settings/store.js";
 
-function copyPath(value: string): void {
-  try {
-    const result = navigator.clipboard?.writeText(value);
-    if (result) void result.catch(() => undefined);
-  } catch {
-    /* clipboard unavailable */
+function changeTypeColor(changeType: string): string {
+  switch (changeType) {
+    case "added":
+      return "green";
+    case "modified":
+      return "blue";
+    case "deleted":
+      return "red";
+    case "renamed":
+      return "orange";
+    default:
+      return "default";
   }
 }
 
@@ -63,6 +71,28 @@ export function ReviewPage(): React.JSX.Element {
   const [notes, setNotes] = useState("");
   const [focusPaths, setFocusPaths] = useState<string[]>([]);
   const [presetLabel, setPresetLabel] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") === "whatif" ? "whatif" : "ai");
+  const { message } = App.useApp();
+
+  const copyPath = (value: string): void => {
+    try {
+      const result = navigator.clipboard?.writeText(value);
+      if (result) {
+        void result.then(
+          () => message.success("Path copied."),
+          () => message.error("Could not copy the path."),
+        );
+      }
+    } catch {
+      message.error("Could not copy the path.");
+    }
+  };
+
+  const switchTab = (key: string): void => {
+    setTab(key);
+    setSearchParams(key === "ai" ? {} : { tab: key }, { replace: true });
+  };
 
   const activeId = active?.id;
   useEffect(() => {
@@ -164,15 +194,13 @@ export function ReviewPage(): React.JSX.Element {
 
   return (
     <div>
-      <Card
-        size="small"
+      <SectionCard
         style={{
           position: "sticky",
           top: 64,
           zIndex: 4,
-          marginBottom: 16,
-          boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)",
         }}
+        bodyStyle={{ padding: "10px 20px" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Typography.Text strong>{active.name}</Typography.Text>
@@ -193,7 +221,7 @@ export function ReviewPage(): React.JSX.Element {
             {health.data?.ai.configured === true ? "Review with AI" : "Review (AI off)"}
           </Button>
         </div>
-      </Card>
+      </SectionCard>
 
       {inspection.isLoading && <Skeleton active />}
       {inspection.error instanceof ApiError && (
@@ -205,9 +233,9 @@ export function ReviewPage(): React.JSX.Element {
         />
       )}
 
-      <Card
+      <SectionCard
         title="Compare versions"
-        style={{ marginBottom: 16, boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}
+        description="Pick the two revisions under review — diff, files, AI, and what-if all follow this pair."
         extra={
           <Space size={8} wrap>
             {projectDiff.isPending ? (
@@ -315,40 +343,61 @@ export function ReviewPage(): React.JSX.Element {
         </div>
 
         {diffFresh && changedFiles.length > 0 && (
-          <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+          <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Files changed" value={changedFiles.length} />
+              <StatTile label="Files changed" value={changedFiles.length} />
             </Col>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Added" value={diffStats.added} />
+              <StatTile
+                label="Added"
+                value={diffStats.added}
+                dim={diffStats.added === 0}
+              />
             </Col>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Modified" value={diffStats.modified} />
+              <StatTile
+                label="Modified"
+                value={diffStats.modified}
+                dim={diffStats.modified === 0}
+              />
             </Col>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Deleted" value={diffStats.deleted} />
+              <StatTile
+                label="Deleted"
+                value={diffStats.deleted}
+                dim={diffStats.deleted === 0}
+              />
             </Col>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Renamed" value={diffStats.renamed} />
+              <StatTile
+                label="Renamed"
+                value={diffStats.renamed}
+                dim={diffStats.renamed === 0}
+              />
             </Col>
             <Col xs={12} sm={8} md={4}>
-              <Statistic title="Untracked" value={diffStats.untracked} />
+              <StatTile
+                label="Untracked"
+                value={diffStats.untracked}
+                dim={diffStats.untracked === 0}
+              />
             </Col>
           </Row>
         )}
-      </Card>
+      </SectionCard>
 
       {inspection.data && (
-        <Card style={{ boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}>
+        <SectionCard bodyStyle={{ paddingTop: 8 }}>
           <Tabs
-            defaultActiveKey="ai"
+            activeKey={tab}
+            onChange={switchTab}
             items={[
               {
                 key: "ai",
                 label: "AI Review",
                 children: (
                   <div>
-                    <Card size="small" title="Review goal" style={{ marginBottom: 12 }}>
+                    <SectionCard title="Review goal" style={{ marginBottom: 12 }}>
                       <GoalField
                         value={goal}
                         onChange={setGoal}
@@ -359,8 +408,8 @@ export function ReviewPage(): React.JSX.Element {
                           if (template.verbosity) setVerbosity(template.verbosity);
                         }}
                       />
-                    </Card>
-                    <Card size="small" title="Review options" style={{ marginBottom: 12 }}>
+                    </SectionCard>
+                    <SectionCard title="Review options" style={{ marginBottom: 12 }}>
                       <Row gutter={[16, 0]}>
                         <Col xs={24} md={12}>
                           <LensPicker value={lens} onChange={setLens} />
@@ -394,7 +443,7 @@ export function ReviewPage(): React.JSX.Element {
                           style={{ marginTop: 6 }}
                         />
                       </div>
-                    </Card>
+                    </SectionCard>
                     <Button
                       type="primary"
                       size="large"
@@ -431,13 +480,13 @@ export function ReviewPage(): React.JSX.Element {
                     message={`${diffError.code}: ${diffError.message}`}
                   />
                 ) : (
-                  <Card size="small" title="Unified diff">
+                  <SectionCard title="Unified diff">
                     <DiffViewer
                       diff={diffFresh ? projectDiff.data?.unifiedDiff : undefined}
                       truncated={projectDiff.data?.diffTruncated}
                       files={diffFresh ? changedFiles : undefined}
                     />
-                  </Card>
+                  </SectionCard>
                 ),
               },
               {
@@ -447,7 +496,7 @@ export function ReviewPage(): React.JSX.Element {
                   changedFiles.length === 0 ? (
                     <Empty description="No changed files for this pair — or the diff is still loading." />
                   ) : (
-                    <Card size="small" title="Changed files">
+                    <SectionCard title="Changed files">
                       <Table
                         rowKey="relativePath"
                         pagination={{ pageSize: 20 }}
@@ -465,7 +514,9 @@ export function ReviewPage(): React.JSX.Element {
                           {
                             title: "Change",
                             dataIndex: "changeType",
-                            render: (value: string) => <Tag>{value}</Tag>,
+                            render: (value: string) => (
+                              <Tag color={changeTypeColor(value)}>{value}</Tag>
+                            ),
                           },
                           {
                             title: "Was",
@@ -496,12 +547,24 @@ export function ReviewPage(): React.JSX.Element {
                           },
                         ]}
                       />
-                    </Card>
+                    </SectionCard>
                   ),
+              },
+              {
+                key: "whatif",
+                label: "What-if",
+                children: (
+                  <WhatIfThread
+                    projectId={active.id}
+                    projectName={active.name}
+                    localPath={active.localPath}
+                    baseRef={currentRef}
+                  />
+                ),
               },
             ]}
           />
-        </Card>
+        </SectionCard>
       )}
     </div>
   );

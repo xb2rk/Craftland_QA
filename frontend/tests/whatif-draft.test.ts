@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { draftEditFromPrompt } from "../src/pages/WhatIf.js";
+import { draftEditFromPrompt } from "../src/whatif/prompt-draft.js";
 
 const FILES = ["Assets/CSV/ShopData.csv", "Assets/CSV/ZombieData.csv"];
 

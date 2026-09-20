@@ -2,7 +2,7 @@ import "antd/dist/reset.css";
 import "./styles.css";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConfigProvider } from "antd";
+import { App, ConfigProvider } from "antd";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
@@ -20,16 +20,23 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ConfigProvider
       theme={{
         token: {
-          borderRadius: 10,
+          borderRadius: 12,
           colorPrimary: "#4f46e5",
-          colorBgLayout: "#f1f5f9",
+          colorInfo: "#0ea5e9",
+          colorSuccess: "#16a34a",
+          colorWarning: "#d97706",
+          colorError: "#dc2626",
+          colorBgLayout: "transparent",
+          colorBgContainer: "#ffffff",
           fontSize: 14,
         },
       }}
     >
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <App>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </App>
     </ConfigProvider>
   </React.StrictMode>,
 );

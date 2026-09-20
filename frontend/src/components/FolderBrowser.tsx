@@ -28,6 +28,9 @@ export function FolderBrowser({ open, onClose, onSelect }: FolderBrowserProps): 
   const rootsNotConfigured =
     browse.error instanceof ApiError && browse.error.code === "BROWSE_ROOTS_NOT_CONFIGURED";
 
+  const trimmedTyped = typedPath.trim();
+  const effectivePath = trimmedTyped.length > 0 ? trimmedTyped : currentPath;
+
   const segments =
     currentPath !== null && currentPath.length > 0
       ? currentPath.split(/[/\\]/).filter((segment) => segment.length > 0)
@@ -45,12 +48,12 @@ export function FolderBrowser({ open, onClose, onSelect }: FolderBrowserProps): 
         <Button
           key="select"
           type="primary"
-          disabled={currentPath === null || currentPath.length === 0}
+          disabled={effectivePath === null || effectivePath.length === 0}
           onClick={() => {
-            if (currentPath !== null && currentPath.length > 0) onSelect(currentPath);
+            if (effectivePath !== null && effectivePath.length > 0) onSelect(effectivePath);
           }}
         >
-          Select this folder
+          Use this path
         </Button>,
       ]}
       width={640}
@@ -60,18 +63,8 @@ export function FolderBrowser({ open, onClose, onSelect }: FolderBrowserProps): 
         value={typedPath}
         onChange={(event) => setTypedPath(event.target.value)}
         onPressEnter={() => {
-          if (typedPath.trim().length > 0) onSelect(typedPath.trim());
+          if (trimmedTyped.length > 0) onSelect(trimmedTyped);
         }}
-        suffix={
-          <Button
-            type="link"
-            size="small"
-            disabled={typedPath.trim().length === 0}
-            onClick={() => onSelect(typedPath.trim())}
-          >
-            Use this path
-          </Button>
-        }
         style={{ marginBottom: 12 }}
       />
       {rootsNotConfigured ? (

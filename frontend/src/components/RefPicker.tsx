@@ -103,9 +103,6 @@ export function RefPicker({ localPath, label, value, onChange }: RefPickerProps)
           </Button>
         </div>
       )}
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Current: <Typography.Text code>{value}</Typography.Text>
-      </Typography.Text>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Alert, Card, Skeleton, Tag, Typography } from "antd";
 
 import type { AnalysisRun, NormalizedAiReport } from "../api/types.js";
 import { riskColor } from "./system-map.js";
+import { RiskTag } from "./ui/RiskTag.js";
 
 function asReport(value: unknown): NormalizedAiReport | null {
   if (typeof value !== "object" || value === null) return null;
@@ -31,6 +32,14 @@ export function Verdict({ run }: { run: AnalysisRun }): React.JSX.Element {
   const report = asReport(run.aiReport);
   const summary = report?.summary;
   const risk = summary?.risk_level ?? "unknown";
+  const normalized = risk.toLowerCase();
+  const tone = normalized.includes("high") || normalized === "critical"
+    ? "high"
+    : normalized.includes("medium")
+      ? "medium"
+      : normalized.includes("low")
+        ? "low"
+        : "";
   const rawAssessment = summary?.overall_assessment ?? "";
   const assessment =
     rawAssessment.trim().length > 0
@@ -40,14 +49,28 @@ export function Verdict({ run }: { run: AnalysisRun }): React.JSX.Element {
   const recommendations = Array.isArray(report?.recommendations) ? report!.recommendations : [];
 
   return (
-    <Card
-      title="Verdict"
-      extra={
-        <Tag color={riskColor(risk)} style={{ fontSize: 14, padding: "2px 12px" }}>
-          {risk}
-        </Tag>
-      }
-    >
+    <div className={`cqa-verdict-banner${tone ? ` cqa-verdict-${tone}` : ""}`}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 8,
+        }}
+      >
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Verdict
+        </Typography.Title>
+        <RiskTag risk={risk} />
+        <span style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Tag>Confidence: {summary?.confidence ?? "—"}</Tag>
+          <Tag>Scope: {summary?.change_scope ?? "—"}</Tag>
+          <Tag>
+            {run.comparison?.changedFiles.length ?? 0} files · {run.baseRef} → {run.currentRef}
+          </Tag>
+        </span>
+      </div>
       {report === null && (
         <Alert
           type="warning"
@@ -56,18 +79,13 @@ export function Verdict({ run }: { run: AnalysisRun }): React.JSX.Element {
           message={`AI ${run.aiStatus ?? "unavailable"} — the deterministic findings below still stand on their own.`}
         />
       )}
-      <Typography.Paragraph style={{ fontSize: 15 }}>{assessment}</Typography.Paragraph>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Tag>Confidence: {summary?.confidence ?? "—"}</Tag>
-        <Tag>Scope: {summary?.change_scope ?? "—"}</Tag>
-        <Tag>
-          {run.comparison?.changedFiles.length ?? 0} files · {run.baseRef} → {run.currentRef}
-        </Tag>
-      </div>
+      <Typography.Paragraph style={{ fontSize: 15, marginBottom: 8 }}>
+        {assessment}
+      </Typography.Paragraph>
       {aiFindings.length > 0 && (
         <div>
           <Typography.Text strong>Top concerns</Typography.Text>
-          <ul style={{ marginTop: 4, paddingLeft: 20 }}>
+          <ul style={{ marginTop: 4, marginBottom: 4, paddingLeft: 20 }}>
             {aiFindings.slice(0, 3).map((finding) => (
               <li key={finding.id}>
                 {finding.title}{" "}
@@ -83,6 +101,6 @@ export function Verdict({ run }: { run: AnalysisRun }): React.JSX.Element {
           tab.
         </Typography.Text>
       )}
-    </Card>
+    </div>
   );
 }

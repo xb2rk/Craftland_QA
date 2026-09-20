@@ -1,10 +1,15 @@
-import { Alert, Button, Card, Input, Select, Skeleton, Table, Tag, Typography, Upload } from "antd";
+import { Alert, App, Button, Input, Select, Skeleton, Table, Tag, Typography, Upload } from "antd";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAnalyses, useCompareMutation, useImportRunMutation } from "../api/hooks.js";
 import { ANALYSIS_LENSES, ApiError, type NormalizedAiReport } from "../api/types.js";
 import { riskColor } from "../components/system-map.js";
+import { PageHeader } from "../components/ui/PageHeader.js";
+import { RiskTag } from "../components/ui/RiskTag.js";
+import { SectionCard } from "../components/ui/SectionCard.js";
+import { StatusDot } from "../components/ui/StatusDot.js";
+import { runStatusTone } from "../theme/tokens.js";
 
 function runRisk(run: { aiReport?: unknown }): string {
   const report = run.aiReport as NormalizedAiReport | undefined;
@@ -22,6 +27,7 @@ export function RunsPage(): React.JSX.Element {
   const [compareMode, setCompareMode] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [compareGoal, setCompareGoal] = useState("Compare the two selected runs");
+  const { message } = App.useApp();
 
   const rows = useMemo(() => {
     return (analyses.data ?? []).filter((run) => {
@@ -39,9 +45,14 @@ export function RunsPage(): React.JSX.Element {
   if (analyses.isLoading) return <Skeleton active />;
 
   return (
-    <Card
-      title="Runs"
-      extra={
+    <div>
+      <PageHeader
+        eyebrow="History"
+        title="Runs"
+        description="Every review and comparison — rerun, compare two runs, or import a run from JSON."
+      />
+      <SectionCard
+        extra={
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Input
             placeholder="Search goal or project"
@@ -87,7 +98,12 @@ export function RunsPage(): React.JSX.Element {
               void file
                 .text()
                 .then((text) => importRun.mutate(JSON.parse(text) as Record<string, unknown>, {
-                  onSuccess: (run) => navigate(`/runs/${run.id}`),
+                  onSuccess: (run) => {
+                    message.success("Run imported.");
+                    navigate(`/runs/${run.id}`);
+                  },
+                  onError: (error) =>
+                    message.error(error instanceof Error ? error.message : "Import failed."),
                 }));
               return false;
             }}
@@ -124,11 +140,19 @@ export function RunsPage(): React.JSX.Element {
             render: (goal: string, run) => <Link to={`/runs/${run.id}`}>{goal}</Link>,
           },
           {
+            title: "Status",
+            dataIndex: "status",
+            render: (value: string) => {
+              const tone = runStatusTone(value);
+              return <StatusDot color={tone.tone} pulse={tone.pulse} label={value} />;
+            },
+          },
+          {
             title: "Verdict",
             key: "verdict",
             render: (_, run) =>
               run.status === "completed" ? (
-                <Tag color={riskColor(runRisk(run))}>{runRisk(run)}</Tag>
+                <RiskTag risk={runRisk(run)} />
               ) : (
                 <Tag>{run.status}</Tag>
               ),
@@ -208,6 +232,7 @@ export function RunsPage(): React.JSX.Element {
           message={`${importRun.error.code}: ${importRun.error.message}`}
         />
       )}
-    </Card>
+      </SectionCard>
+    </div>
   );
 }

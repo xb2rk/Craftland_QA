@@ -1,9 +1,11 @@
-import { Button, Card, Divider, Input, List, Select, Tag, Typography } from "antd";
+import { Button, Divider, Input, List, Select, Tag, Typography } from "antd";
 import { useState } from "react";
 
 import { useHealth } from "../api/hooks.js";
 import { ANALYSIS_LENSES, VERBOSITIES, type AnalysisLens, type Verbosity } from "../api/types.js";
 import { LensPicker } from "../components/LensPicker.js";
+import { PageHeader } from "../components/ui/PageHeader.js";
+import { SectionCard } from "../components/ui/SectionCard.js";
 import { VerbosityPicker } from "../components/VerbosityPicker.js";
 import { loadSavedProjects, saveActiveProjectId, saveSavedProjects } from "../projects/registry.js";
 import {
@@ -13,7 +15,7 @@ import {
   saveSettings,
   type AppSettings,
 } from "../settings/store.js";
-import { loadScenarios, saveScenarios } from "../whatif/scenarios.js";
+import { loadThreads, saveThreads } from "../whatif/threads.js";
 
 export function SettingsPage(): React.JSX.Element {
   const health = useHealth();
@@ -54,14 +56,13 @@ export function SettingsPage(): React.JSX.Element {
 
   return (
     <div>
-      <Typography.Title level={3} style={{ marginBottom: 4 }}>
-        Settings
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        Defaults apply to every new review — each run can still override them.
-      </Typography.Paragraph>
+      <PageHeader
+        eyebrow="Configuration"
+        title="Settings"
+        description="Defaults apply to every new review — each run can still override them."
+      />
 
-      <Card title="AI defaults" style={{ marginBottom: 16 }}>
+      <SectionCard title="AI defaults">
         <VerbosityPicker
           value={settings.verbosity}
           onChange={(verbosity) => update({ verbosity })}
@@ -70,9 +71,9 @@ export function SettingsPage(): React.JSX.Element {
           value={settings.defaultLens}
           onChange={(defaultLens) => update({ defaultLens })}
         />
-      </Card>
+      </SectionCard>
 
-      <Card title={`Prompt templates (${settings.templates.length})`} style={{ marginBottom: 16 }}>
+      <SectionCard title={`Prompt templates (${settings.templates.length})`}>
         <Typography.Paragraph type="secondary">
           Saved goals with lens and length baked in — apply them in one click from the Review page.
         </Typography.Paragraph>
@@ -144,9 +145,9 @@ export function SettingsPage(): React.JSX.Element {
             </List.Item>
           )}
         />
-      </Card>
+      </SectionCard>
 
-      <Card title="Backend" style={{ marginBottom: 16 }}>
+      <SectionCard title="Backend">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Tag>History: {health.data?.persistence ?? "…"}</Tag>
           <Tag>AI: {health.data?.ai.configured === true ? "connected" : "off"}</Tag>
@@ -157,9 +158,9 @@ export function SettingsPage(): React.JSX.Element {
             In-memory history is lost on backend restart — export runs you want to keep.
           </Typography.Paragraph>
         )}
-      </Card>
+      </SectionCard>
 
-      <Card title="Local data">
+      <SectionCard title="Local data">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button
             danger
@@ -172,14 +173,14 @@ export function SettingsPage(): React.JSX.Element {
           >
             Clear saved projects ({loadSavedProjects().length})
           </Button>
-          <Button danger onClick={() => wipe(() => saveScenarios([]))}>
-            Clear what-if scenarios ({loadScenarios().length})
+          <Button danger onClick={() => wipe(() => saveThreads([]))}>
+            Clear what-if threads ({loadThreads().length})
           </Button>
           <Button danger onClick={() => wipe(() => saveSettings(DEFAULT_SETTINGS))}>
             Reset settings
           </Button>
         </div>
-      </Card>
+      </SectionCard>
     </div>
   );
 }
