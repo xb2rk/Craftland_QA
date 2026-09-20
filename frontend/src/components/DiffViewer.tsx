@@ -1,5 +1,5 @@
 import { Alert, App, Button, Card, Input, Segmented, Space, Tag, Tooltip, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { ChangedFileRef } from "../api/types.js";
 import {
@@ -14,7 +14,13 @@ interface DiffViewerProps {
   diff?: string;
   truncated?: boolean;
   files?: ChangedFileRef[];
+  /** Controlled file filter (e.g. set by a "View in diff" action elsewhere). */
+  filter?: string;
+  onFilterChange?: (value: string) => void;
 }
+
+/** Files with more changed lines than this start collapsed for performance. */
+const LARGE_FILE_LINES = 150;
 
 function statusColor(status: DiffFile["status"]): string {
   switch (status) {
@@ -53,17 +59,27 @@ function scrollToFile(index: number): void {
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-export function DiffViewer({ diff, truncated, files }: DiffViewerProps): React.JSX.Element {
+export function DiffViewer({ diff, truncated, files, filter, onFilterChange }: DiffViewerProps): React.JSX.Element {
   const { message } = App.useApp();
   const [view, setView] = useState<"unified" | "split">("unified");
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+  const query = filter ?? internalQuery;
+  const setQuery = onFilterChange ?? setInternalQuery;
 
   const parsed = useMemo(() => (diff ? parseUnifiedDiff(diff) : []), [diff]);
+  useEffect(() => {
+    const next: Record<number, boolean> = {};
+    parsed.forEach((file, index) => {
+      if (file.added + file.deleted > LARGE_FILE_LINES) next[index] = true;
+    });
+    setCollapsed(next);
+  }, [diff]);
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return parsed;
-    return parsed.filter((file) => file.path.toLowerCase().includes(needle));
+    return parsed
+      .map((file, index) => ({ file, index }))
+      .filter(({ file }) => needle.length === 0 || file.path.toLowerCase().includes(needle));
   }, [parsed, query]);
 
   if (diff === undefined || diff.trim().length === 0) {
@@ -140,8 +156,7 @@ export function DiffViewer({ diff, truncated, files }: DiffViewerProps): React.J
 
       {visible.length > 1 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-          {visible.map((file) => {
-            const index = parsed.indexOf(file);
+          {visible.map(({ file, index }) => {
             return (
               <Button key={`${file.path}-${index}`} size="small" onClick={() => scrollToFile(index)}>
                 {baseName(file.path)}
@@ -152,8 +167,7 @@ export function DiffViewer({ diff, truncated, files }: DiffViewerProps): React.J
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {visible.map((file) => {
-          const index = parsed.indexOf(file);
+        {visible.map(({ file, index }) => {
           const isCollapsed = collapsed[index] === true;
           return (
             <Card
@@ -269,7 +283,7 @@ export function DiffViewer({ diff, truncated, files }: DiffViewerProps): React.J
       )}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Per-file view of the compared revision. Line counts follow the stored snapshot, not the
-        live worktree.
+        live worktree. Large files start collapsed — expand them individually or all at once.
       </Typography.Text>
     </div>
   );

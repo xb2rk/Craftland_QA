@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { z } from "zod";
 
 const emptyToUndefined = (value: unknown): unknown =>
@@ -13,7 +15,8 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
-  PERSISTENCE_DRIVER: z.enum(["memory", "mysql"]).default("memory"),
+  PERSISTENCE_DRIVER: z.enum(["memory", "file", "mysql"]).default("file"),
+  FILE_STORE_DIR: optionalNonEmptyString,
   DB_HOST: optionalNonEmptyString,
   DB_PORT: z.coerce.number().int().min(1).max(65535).default(3306),
   DB_NAME: optionalNonEmptyString,
@@ -47,9 +50,10 @@ const envSchema = z.object({
 export type AppConfig = {
   port: number;
   logLevel: z.infer<typeof envSchema>["LOG_LEVEL"];
-  persistenceDriver: "memory" | "mysql";
+  persistenceDriver: "memory" | "file" | "mysql";
   db:
     | { driver: "memory" }
+    | { driver: "file"; dir: string }
     | {
         driver: "mysql";
         host: string;
@@ -94,6 +98,8 @@ export function loadConfig(
     }
   }
 
+  const storeDir = path.resolve(process.cwd(), env.FILE_STORE_DIR ?? "data");
+
   return {
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
@@ -108,7 +114,9 @@ export function loadConfig(
             user: env.DB_USER!,
             password: env.DB_PASSWORD,
           }
-        : { driver: "memory" },
+        : env.PERSISTENCE_DRIVER === "file"
+          ? { driver: "file", dir: storeDir }
+          : { driver: "memory" },
     ai: aiUrl !== undefined && aiKey !== undefined
       ? {
           configured: true,

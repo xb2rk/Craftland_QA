@@ -1,4 +1,4 @@
-import { Alert, App, Button, Empty, Skeleton, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Button, Empty, Input, Select, Skeleton, Table, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -56,6 +56,9 @@ export function ReviewPage(): React.JSX.Element {
   const [notes, setNotes] = useState("");
   const [focusPaths, setFocusPaths] = useState<string[]>([]);
   const [presetLabel, setPresetLabel] = useState("");
+  const [diffFilter, setDiffFilter] = useState("");
+  const [fileQuery, setFileQuery] = useState("");
+  const [fileChange, setFileChange] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get("tab");
   const [tab, setTab] = useState(
@@ -94,6 +97,9 @@ export function ReviewPage(): React.JSX.Element {
     setNotes("");
     setFocusPaths([]);
     setPresetLabel("");
+    setDiffFilter("");
+    setFileQuery("");
+    setFileChange(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
@@ -127,6 +133,15 @@ export function ReviewPage(): React.JSX.Element {
     for (const file of changedFiles) counts[file.changeType] += 1;
     return counts;
   }, [changedFiles]);
+
+  const visibleChangedFiles = useMemo(() => {
+    const needle = fileQuery.trim().toLowerCase();
+    return changedFiles.filter(
+      (file) =>
+        (fileChange === null || file.changeType === fileChange) &&
+        (needle.length === 0 || file.relativePath.toLowerCase().includes(needle)),
+    );
+  }, [changedFiles, fileQuery, fileChange]);
 
   const extraTemplates: ExtraTemplate[] = useMemo(
     () =>
@@ -312,17 +327,24 @@ export function ReviewPage(): React.JSX.Element {
                 key: "diff",
                 label: "Git Diff",
                 children: projectDiff.data === undefined ? (
-                  projectDiff.isPending ? (
-                    <Skeleton active />
-                  ) : diffError instanceof ApiError ? (
-                    <Alert
-                      type="error"
-                      showIcon
-                      message={`${diffError.code}: ${diffError.message}`}
-                    />
-                  ) : (
-                    <Empty description="No diff yet — it loads automatically for this pair." />
-                  )
+                  <SectionCard title="Unified diff">
+                    {projectDiff.isPending ? (
+                      <div>
+                        <Skeleton active />
+                        <Typography.Text type="secondary">
+                          Loading the {baseRef} → {currentRef} diff…
+                        </Typography.Text>
+                      </div>
+                    ) : diffError instanceof ApiError ? (
+                      <Alert
+                        type="error"
+                        showIcon
+                        message={`${diffError.code}: ${diffError.message}`}
+                      />
+                    ) : (
+                      <Empty description="No diff yet — it loads automatically for this pair." />
+                    )}
+                  </SectionCard>
                 ) : (
                   <SectionCard title="Unified diff">
                     {!diffFresh && (
@@ -337,6 +359,8 @@ export function ReviewPage(): React.JSX.Element {
                       diff={projectDiff.data.unifiedDiff}
                       truncated={projectDiff.data.diffTruncated}
                       files={changedFiles}
+                      filter={diffFilter}
+                      onFilterChange={setDiffFilter}
                     />
                   </SectionCard>
                 ),
@@ -349,10 +373,29 @@ export function ReviewPage(): React.JSX.Element {
                     <Empty description="No changed files for this pair." />
                   ) : (
                     <SectionCard title="Changed files">
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                        <Input.Search
+                          allowClear
+                          placeholder="Search files…"
+                          value={fileQuery}
+                          onChange={(event) => setFileQuery(event.target.value)}
+                          style={{ maxWidth: 280 }}
+                        />
+                        <Select
+                          allowClear
+                          placeholder="All change types"
+                          value={fileChange}
+                          onChange={(value) => setFileChange(value ?? null)}
+                          style={{ minWidth: 160 }}
+                          options={["added", "modified", "deleted", "renamed", "untracked"].map(
+                            (change) => ({ value: change, label: change }),
+                          )}
+                        />
+                      </div>
                       <Table
                         rowKey="relativePath"
                         pagination={{ pageSize: 20 }}
-                        dataSource={changedFiles}
+                        dataSource={visibleChangedFiles}
                         columns={[
                           {
                             title: "File",
@@ -393,6 +436,16 @@ export function ReviewPage(): React.JSX.Element {
                                   onClick={() => copyPath(file.relativePath)}
                                 >
                                   Copy path
+                                </Button>
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  onClick={() => {
+                                    setDiffFilter(file.relativePath);
+                                    switchTab("diff");
+                                  }}
+                                >
+                                  View in diff
                                 </Button>
                               </span>
                             ),

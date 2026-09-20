@@ -185,7 +185,7 @@ export interface ProjectInspection {
 export interface Health {
   status: string;
   now: string;
-  persistence: "memory" | "mysql";
+  persistence: "memory" | "file" | "mysql";
   ai: { configured: boolean };
   pendingJobs: number;
 }
