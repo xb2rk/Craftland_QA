@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { DEFAULT_DIFF_LIMITS } from "../../config/constants.js";
+import { classifyRepositoryPath } from "../discovery/file-classifier.js";
+import { GitClient, sharedGitClient } from "./git-client.js";
 
 export interface ChangedFile {
   changeType: "added" | "modified" | "deleted" | "renamed" | "untracked";
@@ -22,33 +21,35 @@ export async function compareGitRevisions(
   repositoryRoot: string,
   baseRef: string,
   currentRef: string,
-  options: { maxDiffCharacters?: number } = {}
+  options: { maxDiffCharacters?: number; git?: GitClient } = {},
 ): Promise<GitComparison> {
-  const maxDiffCharacters = options.maxDiffCharacters ?? 300_000;
-  const baseCommit = await resolveRef(repositoryRoot, baseRef);
+  const git = options.git ?? sharedGitClient;
+  const maxDiffCharacters =
+    options.maxDiffCharacters ?? DEFAULT_DIFF_LIMITS.maxDiffCharacters;
+  const baseCommit = await git.resolveCommit(repositoryRoot, baseRef);
   const currentIsWorktree = currentRef.toUpperCase() === "WORKTREE";
-  const currentCommit = await resolveRef(
+  const currentCommit = await git.resolveCommit(
     repositoryRoot,
-    currentIsWorktree ? "HEAD" : currentRef
+    currentIsWorktree ? "HEAD" : currentRef,
   );
   const comparisonArgs = currentIsWorktree
     ? [baseCommit]
     : [baseCommit, currentCommit];
 
-  const nameStatus = await runGit(repositoryRoot, [
+  const nameStatus = await git.run(repositoryRoot, [
     "diff",
     "--name-status",
-    ...comparisonArgs
+    ...comparisonArgs,
   ]);
   const changedFiles = parseNameStatus(nameStatus).filter(
-    isSupportedAnalysisChange
+    isSupportedAnalysisChange,
   );
 
   if (currentIsWorktree) {
-    const status = await runGit(repositoryRoot, [
+    const status = await git.run(repositoryRoot, [
       "status",
       "--porcelain",
-      "--untracked-files=all"
+      "--untracked-files=all",
     ]);
     appendUntrackedFiles(changedFiles, status);
   }
@@ -59,18 +60,18 @@ export async function compareGitRevisions(
     .flatMap((file) =>
       file.previousPath === undefined
         ? [file.relativePath]
-        : [file.previousPath, file.relativePath]
+        : [file.previousPath, file.relativePath],
     );
   const rawDiff =
     trackedPaths.length === 0
       ? ""
-      : await runGit(repositoryRoot, [
+      : await git.run(repositoryRoot, [
           "diff",
           "--no-ext-diff",
           "--unified=3",
           ...comparisonArgs,
           "--",
-          ...trackedPaths
+          ...trackedPaths,
         ]);
   const diffTruncated = rawDiff.length > maxDiffCharacters;
 
@@ -79,101 +80,54 @@ export async function compareGitRevisions(
     currentCommit,
     currentIsWorktree,
     changedFiles: relevantChangedFiles,
-    unifiedDiff: diffTruncated
-      ? rawDiff.slice(0, maxDiffCharacters)
-      : rawDiff,
-    diffTruncated
+    unifiedDiff: diffTruncated ? rawDiff.slice(0, maxDiffCharacters) : rawDiff,
+    diffTruncated,
   };
 }
 
-async function resolveRef(
-  repositoryRoot: string,
-  reference: string
-): Promise<string> {
-  return runGit(repositoryRoot, ["rev-parse", "--verify", `${reference}^{commit}`]);
-}
-
-async function runGit(
-  workingDirectory: string,
-  args: string[]
-): Promise<string> {
-  const result = await execFileAsync("git", args, {
-    cwd: workingDirectory,
-    windowsHide: true,
-    maxBuffer: 20 * 1024 * 1024
-  });
-  return result.stdout.trim();
-}
-
 function parseNameStatus(output: string): ChangedFile[] {
-  if (output.length === 0) {
-    return [];
-  }
-
+  if (output.length === 0) return [];
   return output
     .split(/\r?\n/)
     .map((line): ChangedFile | null => {
       const [status, firstPath, secondPath] = line.split("\t");
-      if (firstPath === undefined) {
-        return null;
-      }
+      if (firstPath === undefined) return null;
       if (status.startsWith("R") && secondPath !== undefined) {
         return {
           changeType: "renamed",
           previousPath: normalizePath(firstPath),
-          relativePath: normalizePath(secondPath)
+          relativePath: normalizePath(secondPath),
         };
       }
       const changeType =
-        status === "A"
-          ? "added"
-          : status === "D"
-            ? "deleted"
-            : "modified";
-      return {
-        changeType,
-        relativePath: normalizePath(firstPath)
-      };
+        status === "A" ? "added" : status === "D" ? "deleted" : "modified";
+      return { changeType, relativePath: normalizePath(firstPath) };
     })
     .filter((file): file is ChangedFile => file !== null);
 }
 
 function appendUntrackedFiles(files: ChangedFile[], statusOutput: string): void {
   for (const line of statusOutput.split(/\r?\n/)) {
-    if (!line.startsWith("?? ")) {
-      continue;
-    }
+    if (!line.startsWith("?? ")) continue;
     const relativePath = normalizePath(line.slice(3));
-    if (!isSupportedAnalysisPath(relativePath)) {
-      continue;
-    }
-    files.push({
-      changeType: "untracked",
-      relativePath
-    });
+    if (classifyRepositoryPath(relativePath) === null) continue;
+    files.push({ changeType: "untracked", relativePath });
   }
 }
 
 function isSupportedAnalysisChange(file: ChangedFile): boolean {
   return (
-    isSupportedAnalysisPath(file.relativePath) ||
+    classifyRepositoryPath(file.relativePath) !== null ||
     (file.previousPath !== undefined &&
-      isSupportedAnalysisPath(file.previousPath))
+      classifyRepositoryPath(file.previousPath) !== null)
   );
-}
-
-function isSupportedAnalysisPath(relativePath: string): boolean {
-  const normalized = relativePath.toLowerCase();
-  return normalized.endsWith(".fcg") || normalized.endsWith(".csv");
 }
 
 function deduplicateChangedFiles(files: ChangedFile[]): ChangedFile[] {
   const deduplicated = new Map<string, ChangedFile>();
-  for (const file of files) {
-    deduplicated.set(file.relativePath, file);
-  }
+  for (const file of files) deduplicated.set(file.relativePath, file);
   return [...deduplicated.values()].sort((left, right) =>
-    left.relativePath.localeCompare(right.relativePath)
+    left.relativePath.localeCompare(right.relativePath),
   );
 }
 

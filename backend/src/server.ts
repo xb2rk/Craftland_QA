@@ -1,38 +1,71 @@
-import "./config/environment.js";
+import dotenv from "dotenv";
 
-import { createApp } from "./app.js";
-import { createMySqlPoolFromEnvironment } from "./database/pool.js";
-import { InMemoryAnalysisRunRepository } from "./repositories/analysis-run-repository.js";
-import { MySqlAnalysisRunRepository } from "./repositories/mysql-analysis-run-repository.js";
-import { AnalysisRunner } from "./services/analysis-runner.js";
-import { InseaWorkflowClient } from "./services/ai/insea-workflow-client.js";
+import { createApp } from "./http/app.js";
+import { loadConfig } from "./config/env.js";
+import { createDatabasePool } from "./database/pool.js";
+import { AnalysisService } from "./modules/analysis/analysis.service.js";
+import { InseaWorkflowClient } from "./modules/ai/insea.client.js";
+import { createAnalysisRunRepository } from "./persistence/factory.js";
+import { createLogger, setLogger } from "./shared/logger.js";
 
-const port = Number(process.env.PORT ?? 3000);
-const pool = createMySqlPoolFromEnvironment();
-const repository =
-  pool === null
-    ? new InMemoryAnalysisRunRepository()
-    : new MySqlAnalysisRunRepository(pool);
-const aiClient =
-  process.env.AI_WORKFLOW_URL && process.env.AI_WORKFLOW_API_KEY
-    ? new InseaWorkflowClient({
-        url: process.env.AI_WORKFLOW_URL,
-        apiKey: process.env.AI_WORKFLOW_API_KEY,
-        timeoutMs: Number(process.env.AI_WORKFLOW_TIMEOUT_MS ?? 180_000)
-      })
-    : undefined;
-const analysisRunner = new AnalysisRunner(repository, {
-  aiClient,
-  maxAiFiles: 30,
-  maxAiBytes: Number(
-    process.env.AI_WORKFLOW_MAX_CONTEXT_BYTES ?? 20 * 1024 * 1024
-  )
-});
-const app = createApp({
-  analysisRunner,
-  aiConfigured: aiClient !== undefined
-});
+dotenv.config({ quiet: true });
 
-app.listen(port, () => {
-  console.log(`Craftland Quality Analyzer backend listening on port ${port}.`);
+async function main(): Promise<void> {
+  const config = loadConfig();
+  const logger = createLogger(config.logLevel);
+  setLogger(logger);
+
+  const pool = createDatabasePool(config);
+  const repository = createAnalysisRunRepository(config, pool);
+  const maybeRecoverable = repository as unknown as {
+    markStaleRunningAsFailed?: () => Promise<number>;
+  };
+  if (typeof maybeRecoverable.markStaleRunningAsFailed === "function") {
+    try {
+      const recovered = await maybeRecoverable.markStaleRunningAsFailed();
+      if (recovered > 0) logger.warn({ recovered }, "marked stale runs as failed");
+    } catch (error) {
+      logger.warn({ err: error }, "stale-run recovery failed");
+    }
+  }
+
+  const aiClient =
+    config.ai.configured === true
+      ? new InseaWorkflowClient({
+          url: config.ai.url,
+          apiKey: config.ai.apiKey,
+          timeoutMs: config.ai.timeoutMs,
+        })
+      : null;
+  if (aiClient === null) {
+    logger.warn("AI workflow is not configured; deterministic results only.");
+  }
+
+  const analysisService = new AnalysisService(repository, config, aiClient);
+  const app = createApp({ config, analysisService });
+
+  const server = app.listen(config.port, () => {
+    logger.info(
+      {
+        port: config.port,
+        persistence: config.persistenceDriver,
+        ai: config.ai.configured,
+      },
+      "backend listening",
+    );
+  });
+
+  const shutdown = (signal: string) => {
+    logger.info({ signal }, "shutting down");
+    server.close(() => void pool?.end().finally(() => process.exit(0)));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+void main().catch((error: unknown) => {
+  // eslint-disable-next-line no-console
+  console.error(error);
+  process.exitCode = 1;
 });

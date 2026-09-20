@@ -1,79 +1,70 @@
-import "../config/environment.js";
-
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { RowDataPacket } from "mysql2/promise";
+import dotenv from "dotenv";
 
-import { createMySqlPoolFromEnvironment } from "./pool.js";
+import { loadConfig } from "../config/env.js";
+import { createDatabasePool } from "./pool.js";
 
-interface MigrationRow extends RowDataPacket {
-  version: string;
-}
+dotenv.config({ quiet: true });
 
-const migrationDirectory = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "migrations"
-);
-const pool = createMySqlPoolFromEnvironment();
-
-if (pool === null) {
-  throw new Error(
-    "MySQL is not configured. Set DB_HOST, DB_NAME, DB_USER and DB_PASSWORD."
-  );
-}
-
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS schema_migrations (
-    version VARCHAR(255) NOT NULL,
-    applied_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    PRIMARY KEY (version)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-`);
-
-const migrationFiles = (await readdir(migrationDirectory))
-  .filter((fileName) => fileName.endsWith(".sql"))
-  .sort();
-
-for (const migrationFile of migrationFiles) {
-  const [rows] = await pool.query<MigrationRow[]>(
-    "SELECT version FROM schema_migrations WHERE version = ?",
-    [migrationFile]
-  );
-  if (rows.length > 0) {
-    continue;
-  }
-
-  const sql = await readFile(
-    path.join(migrationDirectory, migrationFile),
-    "utf8"
-  );
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    for (const statement of splitSqlStatements(sql)) {
-      await connection.query(statement);
-    }
-    await connection.query(
-      "INSERT INTO schema_migrations (version) VALUES (?)",
-      [migrationFile]
-    );
-    await connection.commit();
-    console.log(`Applied migration ${migrationFile}.`);
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-}
-
-await pool.end();
-
-function splitSqlStatements(sql: string): string[] {
+function splitStatements(sql: string): string[] {
   return sql
     .split(/;\s*(?:\r?\n|$)/)
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0);
 }
+
+async function main(): Promise<void> {
+  const config = loadConfig();
+  if (config.db.driver !== "mysql") {
+    console.log("PERSISTENCE_DRIVER=memory, nothing to migrate.");
+    return;
+  }
+  const pool = createDatabasePool(config)!;
+  try {
+    const migrationsDir = path.dirname(fileURLToPath(import.meta.url));
+    const files = (await readdir(path.join(migrationsDir, "migrations")))
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(64) PRIMARY KEY,
+        applied_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+      )`,
+    );
+    for (const file of files) {
+      const version = file.replace(/\.sql$/, "");
+      const [applied] = await pool.query(
+        "SELECT version FROM schema_migrations WHERE version = ?",
+        [version],
+      );
+      if ((applied as unknown[]).length > 0) continue;
+      const sql = await readFile(
+        path.join(migrationsDir, "migrations", file),
+        "utf8",
+      );
+      const connection = await pool.getConnection();
+      try {
+        for (const statement of splitStatements(sql)) {
+          await connection.query(statement);
+        }
+        await connection.query(
+          "INSERT INTO schema_migrations (version) VALUES (?)",
+          [version],
+        );
+        console.log(`Applied migration ${version}.`);
+      } finally {
+        connection.release();
+      }
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
+void main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -1,4 +1,5 @@
-import type { Finding } from "./finding.js";
+import type { Finding } from "../analysis/analysis-run.entity.js";
+import { parseCsvContent } from "./csv.parser.js";
 
 export interface CsvAuditOptions {
   filePath: string;
@@ -14,7 +15,7 @@ export interface CsvAuditResult {
 
 export function auditCsvContent(
   content: string,
-  options: CsvAuditOptions
+  options: CsvAuditOptions,
 ): CsvAuditResult {
   const rows = parseCsvContent(content);
   const header = rows[0] ?? [];
@@ -28,7 +29,7 @@ export function auditCsvContent(
       severity: "error",
       message: "CSV must contain a header row and a type row.",
       filePath: options.filePath,
-      line: rows.length + 1
+      line: rows.length + 1,
     });
     return { header, types, rowCount: 0, findings };
   }
@@ -42,8 +43,8 @@ export function auditCsvContent(
       line: 2,
       evidence: {
         expectedColumns: header.length,
-        actualColumns: types.length
-      }
+        actualColumns: types.length,
+      },
     });
   }
 
@@ -55,10 +56,7 @@ export function auditCsvContent(
         message: `Row has ${row.length} columns; expected ${header.length}.`,
         filePath: options.filePath,
         line: index + 3,
-        evidence: {
-          expectedColumns: header.length,
-          actualColumns: row.length
-        }
+        evidence: { expectedColumns: header.length, actualColumns: row.length },
       });
     }
   });
@@ -67,24 +65,21 @@ export function auditCsvContent(
   if (keyColumns.length > 0) {
     const keyIndexes = keyColumns.map((column) => header.indexOf(column));
     const missingColumns = keyColumns.filter(
-      (_, index) => keyIndexes[index] === -1
+      (_, index) => keyIndexes[index] === -1,
     );
-
     if (missingColumns.length > 0) {
       findings.push({
         code: "CSV_KEY_COLUMN_MISSING",
         severity: "error",
         message: `Key columns are missing: ${missingColumns.join(", ")}.`,
         filePath: options.filePath,
-        line: 1
+        line: 1,
       });
     } else {
       const seenKeys = new Map<string, number>();
       dataRows.forEach((row, index) => {
-        if (row.length !== header.length) {
-          return;
-        }
-        const key = keyIndexes.map((keyIndex) => row[keyIndex]).join("\u001f");
+        if (row.length !== header.length) return;
+        const key = keyIndexes.map((keyIndex) => row[keyIndex]).join("");
         const line = index + 3;
         const firstLine = seenKeys.get(key);
         if (firstLine !== undefined) {
@@ -97,8 +92,8 @@ export function auditCsvContent(
             evidence: {
               keyColumns,
               keyValues: keyIndexes.map((keyIndex) => row[keyIndex]),
-              firstLine
-            }
+              firstLine,
+            },
           });
         } else {
           seenKeys.set(key, line);
@@ -107,60 +102,5 @@ export function auditCsvContent(
     }
   }
 
-  return {
-    header,
-    types,
-    rowCount: dataRows.length,
-    findings
-  };
-}
-
-export function parseCsvContent(content: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let value = "";
-  let inQuotes = false;
-
-  for (let index = 0; index < content.length; index += 1) {
-    const char = content[index];
-    const next = content[index + 1];
-
-    if (char === "\"") {
-      if (inQuotes && next === "\"") {
-        value += "\"";
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === "," && !inQuotes) {
-      row.push(value);
-      value = "";
-      continue;
-    }
-
-    if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && next === "\n") {
-        index += 1;
-      }
-      row.push(value);
-      if (row.some((cell) => cell.length > 0)) {
-        rows.push(row);
-      }
-      row = [];
-      value = "";
-      continue;
-    }
-
-    value += char;
-  }
-
-  row.push(value);
-  if (row.some((cell) => cell.length > 0)) {
-    rows.push(row);
-  }
-
-  return rows;
+  return { header, types, rowCount: dataRows.length, findings };
 }

@@ -1,16 +1,13 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
-import type { ProjectInspection } from "./project-inspector.js";
+import type { ProjectInspection } from "../projects/project.service.js";
 import {
   classifyRepositoryPath,
-  type DiscoveredFile
-} from "./project-discovery.js";
-
-const execFileAsync = promisify(execFile);
+  type DiscoveredFile,
+} from "../discovery/file-classifier.js";
+import { GitClient, sharedGitClient } from "./git-client.js";
 
 export interface GitRevisionSnapshot {
   inspection: ProjectInspection;
@@ -24,25 +21,26 @@ export async function materializeGitRevision(
     maxFiles?: number;
     maxFileBytes?: number;
     includePaths?: string[];
-  } = {}
+    git?: GitClient;
+  } = {},
 ): Promise<GitRevisionSnapshot> {
+  const git = options.git ?? sharedGitClient;
   const maxFiles = options.maxFiles ?? 10_000;
   const maxFileBytes = options.maxFileBytes ?? 2 * 1024 * 1024;
   const snapshotRoot = await mkdtemp(
-    path.join(tmpdir(), "craftland-quality-analyzer-")
+    path.join(tmpdir(), "craftland-quality-analyzer-"),
   );
   const files: DiscoveredFile[] = [];
   let truncated = false;
 
   try {
-    const fileList = await runGit(baseInspection.rootPath, [
-      "ls-tree",
-      "-r",
-      "--name-only",
-      revision
-    ]);
+    const fileList = await git.listRevisionFiles(
+      baseInspection.rootPath,
+      revision,
+    );
     const allCandidatePaths = fileList
       .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^"|"$/g, ""))
       .filter((relativePath) => relativePath.length > 0)
       .filter((relativePath) => classifyRepositoryPath(relativePath) !== null);
     const includedPaths =
@@ -53,7 +51,7 @@ export async function materializeGitRevision(
       includedPaths === undefined
         ? allCandidatePaths
         : allCandidatePaths.filter((relativePath) =>
-            includedPaths.has(relativePath)
+            includedPaths.has(relativePath),
           );
 
     for (const relativePath of candidatePaths) {
@@ -61,37 +59,25 @@ export async function materializeGitRevision(
         truncated = true;
         break;
       }
-      const content = await runGit(baseInspection.rootPath, [
-        "show",
-        `${revision}:${relativePath}`
-      ]);
-      const sizeBytes = Buffer.byteLength(content, "utf8");
-      if (sizeBytes > maxFileBytes) {
-        continue;
-      }
-
-      const absolutePath = path.join(
-        snapshotRoot,
-        ...relativePath.split("/")
+      const content = await git.showRevisionFile(
+        baseInspection.rootPath,
+        revision,
+        relativePath,
       );
+      const sizeBytes = Buffer.byteLength(content, "utf8");
+      if (sizeBytes > maxFileBytes) continue;
+
+      const absolutePath = path.join(snapshotRoot, ...relativePath.split("/"));
       await mkdir(path.dirname(absolutePath), { recursive: true });
       await writeFile(absolutePath, content, "utf8");
       const extension = path.extname(relativePath).toLowerCase();
       const kind = classifyRepositoryPath(relativePath);
-      if (kind === null) {
-        continue;
-      }
-      files.push({
-        relativePath,
-        absolutePath,
-        extension,
-        sizeBytes,
-        kind
-      });
+      if (kind === null) continue;
+      files.push({ relativePath, absolutePath, extension, sizeBytes, kind });
     }
 
     files.sort((left, right) =>
-      left.relativePath.localeCompare(right.relativePath)
+      left.relativePath.localeCompare(right.relativePath),
     );
     return {
       inspection: {
@@ -99,12 +85,12 @@ export async function materializeGitRevision(
         summary: {
           configFiles: countPathsByKind(allCandidatePaths, "config"),
           sourceFiles: countPathsByKind(allCandidatePaths, "source"),
-          otherTextFiles: countPathsByKind(allCandidatePaths, "text")
+          otherTextFiles: countPathsByKind(allCandidatePaths, "text"),
         },
         files,
-        truncated
+        truncated,
       },
-      cleanup: () => rm(snapshotRoot, { recursive: true, force: true })
+      cleanup: () => rm(snapshotRoot, { recursive: true, force: true }),
     };
   } catch (error) {
     await rm(snapshotRoot, { recursive: true, force: true });
@@ -112,23 +98,8 @@ export async function materializeGitRevision(
   }
 }
 
-function countPathsByKind(
-  paths: string[],
-  kind: DiscoveredFile["kind"]
-): number {
-  return paths.filter((relativePath) => classifyRepositoryPath(relativePath) === kind)
-    .length;
-}
-
-async function runGit(
-  workingDirectory: string,
-  args: string[]
-): Promise<string> {
-  const result = await execFileAsync("git", args, {
-    cwd: workingDirectory,
-    windowsHide: true,
-    encoding: "utf8",
-    maxBuffer: 20 * 1024 * 1024
-  });
-  return result.stdout;
+function countPathsByKind(paths: string[], kind: DiscoveredFile["kind"]): number {
+  return paths.filter(
+    (relativePath) => classifyRepositoryPath(relativePath) === kind,
+  ).length;
 }

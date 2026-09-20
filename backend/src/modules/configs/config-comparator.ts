@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 
-import { parseCsvContent } from "../domain/csv-auditor.js";
-import type { Finding } from "../domain/finding.js";
-import type { ChangedFile } from "./git-comparison.js";
-import type { ProjectInspection } from "./project-inspector.js";
+import { DEFAULT_CONFIG_COMPARE_LIMITS } from "../../config/constants.js";
+import type { ChangedFile } from "../git/git-comparison.js";
+import type { ProjectInspection } from "../projects/project.service.js";
+import { parseCsvContent } from "./csv.parser.js";
+import type { Finding } from "../analysis/analysis-run.entity.js";
 
 export interface CompareCsvConfigInput {
   filePath: string;
@@ -13,12 +14,9 @@ export interface CompareCsvConfigInput {
 }
 
 export function compareCsvConfigContent(
-  input: CompareCsvConfigInput
+  input: CompareCsvConfigInput,
 ): Finding[] {
-  if (input.baseContent === input.currentContent) {
-    return [];
-  }
-
+  if (input.baseContent === input.currentContent) return [];
   const baseRows = parseCsvContent(input.baseContent);
   const currentRows = parseCsvContent(input.currentContent);
   const baseHeader = baseRows[0] ?? [];
@@ -27,8 +25,8 @@ export function compareCsvConfigContent(
   const currentTypes = currentRows[1] ?? [];
 
   if (
-    baseHeader.join("\u001f") !== currentHeader.join("\u001f") ||
-    baseTypes.join("\u001f") !== currentTypes.join("\u001f")
+    baseHeader.join("") !== currentHeader.join("") ||
+    baseTypes.join("") !== currentTypes.join("")
   ) {
     return [
       {
@@ -37,23 +35,15 @@ export function compareCsvConfigContent(
         message: "CSV header or type definition changed between versions.",
         filePath: input.filePath,
         line: 1,
-        evidence: {
-          baseHeader,
-          currentHeader,
-          baseTypes,
-          currentTypes
-        }
-      }
+        evidence: { baseHeader, currentHeader, baseTypes, currentTypes },
+      },
     ];
   }
 
   const keyIndexes = input.keyColumns.map((column) =>
-    currentHeader.indexOf(column)
+    currentHeader.indexOf(column),
   );
-  if (
-    input.keyColumns.length === 0 ||
-    keyIndexes.some((index) => index === -1)
-  ) {
+  if (input.keyColumns.length === 0 || keyIndexes.some((i) => i === -1)) {
     return [
       {
         code: "CONFIG_CSV_CONTENT_CHANGED",
@@ -62,43 +52,42 @@ export function compareCsvConfigContent(
           "CSV content changed, but this table has no known stable key for a row-level comparison.",
         filePath: input.filePath,
         line: 1,
-        evidence: { keyColumns: input.keyColumns }
-      }
+        evidence: { keyColumns: input.keyColumns },
+      },
     ];
   }
 
   const baseByKey = indexRows(baseRows.slice(2), keyIndexes, currentHeader.length);
-  const currentByKey = indexRows(
-    currentRows.slice(2),
-    keyIndexes,
-    currentHeader.length
-  );
+  const currentByKey = indexRows(currentRows.slice(2), keyIndexes, currentHeader.length);
   const findings: Finding[] = [];
 
-  for (const key of sortedSharedKeys(baseByKey, currentByKey)) {
+  for (const key of sharedKeys(baseByKey, currentByKey)) {
     const baseRow = baseByKey.get(key)!;
     const currentRow = currentByKey.get(key)!;
-    for (let columnIndex = 0; columnIndex < currentHeader.length; columnIndex += 1) {
-      if (keyIndexes.includes(columnIndex) || baseRow.values[columnIndex] === currentRow.values[columnIndex]) {
+    for (let ci = 0; ci < currentHeader.length; ci += 1) {
+      if (
+        keyIndexes.includes(ci) ||
+        baseRow.values[ci] === currentRow.values[ci]
+      ) {
         continue;
       }
       findings.push({
         code: "CONFIG_VALUE_CHANGED",
         severity: "info",
-        message: `${formatKey(input.keyColumns, currentRow.values, keyIndexes)}: ${currentHeader[columnIndex]} changed from "${baseRow.values[columnIndex]}" to "${currentRow.values[columnIndex]}".`,
+        message: `${formatKey(input.keyColumns, currentRow.values, keyIndexes)}: ${currentHeader[ci]} changed from "${baseRow.values[ci]}" to "${currentRow.values[ci]}".`,
         filePath: input.filePath,
         line: currentRow.line,
         evidence: {
           key: keyObject(input.keyColumns, currentRow.values, keyIndexes),
-          column: currentHeader[columnIndex],
-          baseValue: baseRow.values[columnIndex],
-          currentValue: currentRow.values[columnIndex]
-        }
+          column: currentHeader[ci],
+          baseValue: baseRow.values[ci],
+          currentValue: currentRow.values[ci],
+        },
       });
     }
   }
 
-  for (const key of sortedExclusiveKeys(baseByKey, currentByKey)) {
+  for (const key of exclusiveKeys(baseByKey, currentByKey)) {
     const row = baseByKey.get(key)!;
     findings.push({
       code: "CONFIG_RECORD_REMOVED",
@@ -106,11 +95,10 @@ export function compareCsvConfigContent(
       message: `${formatKey(input.keyColumns, row.values, keyIndexes)} was removed from the config table.`,
       filePath: input.filePath,
       line: row.line,
-      evidence: { key: keyObject(input.keyColumns, row.values, keyIndexes) }
+      evidence: { key: keyObject(input.keyColumns, row.values, keyIndexes) },
     });
   }
-
-  for (const key of sortedExclusiveKeys(currentByKey, baseByKey)) {
+  for (const key of exclusiveKeys(currentByKey, baseByKey)) {
     const row = currentByKey.get(key)!;
     findings.push({
       code: "CONFIG_RECORD_ADDED",
@@ -118,10 +106,9 @@ export function compareCsvConfigContent(
       message: `${formatKey(input.keyColumns, row.values, keyIndexes)} was added to the config table.`,
       filePath: input.filePath,
       line: row.line,
-      evidence: { key: keyObject(input.keyColumns, row.values, keyIndexes) }
+      evidence: { key: keyObject(input.keyColumns, row.values, keyIndexes) },
     });
   }
-
   return findings;
 }
 
@@ -129,26 +116,23 @@ export async function compareProjectConfigs(
   baseInspection: ProjectInspection,
   currentInspection: ProjectInspection,
   changedFiles: ChangedFile[],
-  options: { maxFindings?: number } = {}
+  options: { maxFindings?: number } = {},
 ): Promise<Finding[]> {
-  const maxFindings = options.maxFindings ?? 500;
+  const maxFindings =
+    options.maxFindings ?? DEFAULT_CONFIG_COMPARE_LIMITS.maxFindings;
   const baseFiles = new Map(
-    baseInspection.files.map((file) => [file.relativePath, file])
+    baseInspection.files.map((file) => [file.relativePath, file]),
   );
   const currentFiles = new Map(
-    currentInspection.files.map((file) => [file.relativePath, file])
+    currentInspection.files.map((file) => [file.relativePath, file]),
   );
   const findings: Finding[] = [];
 
   for (const change of changedFiles) {
-    if (findings.length >= maxFindings) {
-      break;
-    }
+    if (findings.length >= maxFindings) break;
     const baseFile = baseFiles.get(change.previousPath ?? change.relativePath);
     const currentFile = currentFiles.get(change.relativePath);
-    if (baseFile?.kind !== "config" && currentFile?.kind !== "config") {
-      continue;
-    }
+    if (baseFile?.kind !== "config" && currentFile?.kind !== "config") continue;
 
     if (baseFile === undefined) {
       findings.push(fileChangeFinding("CONFIG_FILE_ADDED", change.relativePath));
@@ -161,7 +145,7 @@ export async function compareProjectConfigs(
     if (change.changeType === "renamed") {
       findings.push({
         ...fileChangeFinding("CONFIG_FILE_RENAMED", change.relativePath),
-        evidence: { previousPath: change.previousPath }
+        evidence: { previousPath: change.previousPath },
       });
     }
     if (baseFile.extension !== ".csv" || currentFile.extension !== ".csv") {
@@ -171,17 +155,17 @@ export async function compareProjectConfigs(
 
     const [baseContent, currentContent] = await Promise.all([
       readFile(baseFile.absolutePath, "utf8"),
-      readFile(currentFile.absolutePath, "utf8")
+      readFile(currentFile.absolutePath, "utf8"),
     ]);
-    const header = parseCsvContent(currentContent)[0] ?? [];
-    const keyColumns = knownKeyColumns(change.relativePath, header);
+    const currentParsed = parseCsvContent(currentContent);
+    const header = currentParsed[0] ?? [];
     findings.push(
       ...compareCsvConfigContent({
         filePath: change.relativePath,
-        keyColumns,
+        keyColumns: inferKeyColumns(header, currentParsed.slice(2)),
         baseContent,
-        currentContent
-      })
+        currentContent,
+      }),
     );
   }
 
@@ -190,66 +174,40 @@ export async function compareProjectConfigs(
       code: "CONFIG_CHANGE_RESULTS_TRUNCATED",
       severity: "warning",
       message: `Config comparison stopped after ${maxFindings} findings.`,
-      filePath: "<analysis>"
+      filePath: "<analysis>",
     });
   }
   return findings.slice(0, maxFindings + 1);
-}
-
-function knownKeyColumns(filePath: string, header: string[]): string[] {
-  const fileName = filePath.split("/").at(-1)?.toLowerCase();
-  if (fileName === "breaktierdata.csv" || fileName === "mergetierdata.csv") {
-    return ["Tier", "Order"];
-  }
-  const idKeyedFiles = new Set([
-    "activeskilldata.csv",
-    "bossdata.csv",
-    "consumabledata.csv",
-    "itemdata.csv",
-    "materialdata.csv",
-    "mutationdata.csv",
-    "passiveskilldata.csv",
-    "plantdata.csv",
-    "seeddata.csv",
-    "zombiedata.csv"
-  ]);
-  if (fileName !== undefined && idKeyedFiles.has(fileName)) {
-    return ["Id"];
-  }
-  if (fileName === "plantattackvisualdata.csv") return ["PlantId"];
-  if (fileName === "seedpooldata.csv") return ["SeedPoolId"];
-  if (fileName === "shopdata.csv") return ["ShopId"];
-  if (fileName === "upgradedata.csv") return ["UpgradeType"];
-  if (fileName === "elementdata.csv") return ["Element"];
-  return header.includes("Id") ? ["Id"] : [];
 }
 
 function indexRows(rows: string[][], keyIndexes: number[], width: number) {
   const indexed = new Map<string, { values: string[]; line: number }>();
   rows.forEach((values, index) => {
     if (values.length !== width) return;
-    indexed.set(keyIndexes.map((keyIndex) => values[keyIndex]).join("\u001f"), {
+    indexed.set(keyIndexes.map((ki) => values[ki]).join(""), {
       values,
-      line: index + 3
+      line: index + 3,
     });
   });
   return indexed;
 }
 
-function sortedSharedKeys<T>(left: Map<string, T>, right: Map<string, T>) {
+function sharedKeys<T>(left: Map<string, T>, right: Map<string, T>) {
   return [...left.keys()]
     .filter((key) => right.has(key))
-    .sort((first, second) => first.localeCompare(second));
+    .sort((a, b) => a.localeCompare(b));
 }
 
-function sortedExclusiveKeys<T>(left: Map<string, T>, right: Map<string, T>) {
+function exclusiveKeys<T>(left: Map<string, T>, right: Map<string, T>) {
   return [...left.keys()]
     .filter((key) => !right.has(key))
-    .sort((first, second) => first.localeCompare(second));
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function keyObject(keys: string[], values: string[], indexes: number[]) {
-  return Object.fromEntries(keys.map((key, index) => [key, values[indexes[index]]]));
+  return Object.fromEntries(
+    keys.map((key, index) => [key, values[indexes[index]]]),
+  );
 }
 
 function formatKey(keys: string[], values: string[], indexes: number[]) {
@@ -261,7 +219,30 @@ function fileChangeFinding(code: string, filePath: string): Finding {
     CONFIG_FILE_ADDED: "Config file was added.",
     CONFIG_FILE_REMOVED: "Config file was removed.",
     CONFIG_FILE_RENAMED: "Config file was renamed.",
-    CONFIG_FILE_CHANGED: "Non-CSV config file changed."
+    CONFIG_FILE_CHANGED: "Non-CSV config file changed.",
   };
   return { code, severity: "info", message: labels[code], filePath, line: 1 };
+}
+
+export function inferKeyColumns(header: string[], rows: string[][]): string[] {
+  const idColumn = header.find(
+    (column) => column.toLowerCase() === "id",
+  );
+  if (idColumn !== undefined) return [idColumn];
+
+  for (let index = 0; index < header.length; index += 1) {
+    const seen = new Set<string>();
+    let unique = true;
+    for (const row of rows) {
+      if (row.length !== header.length) continue;
+      const value = row[index];
+      if (seen.has(value)) {
+        unique = false;
+        break;
+      }
+      seen.add(value);
+    }
+    if (unique && seen.size > 0) return [header[index]];
+  }
+  return [];
 }

@@ -1,16 +1,30 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
-import type { Finding } from "../../domain/finding.js";
-import type { DiscoveredFile } from "../project-discovery.js";
-import type { GitComparison } from "../git-comparison.js";
-import type { ProjectInspection } from "../project-inspector.js";
-import type {
-  WorkflowFile,
-  WorkflowRunInput
-} from "./insea-workflow-client.js";
+import type { Finding } from "../analysis/analysis-run.entity.js";
+import type { DiscoveredFile } from "../discovery/file-classifier.js";
+import type { GitComparison } from "../git/git-comparison.js";
+import type { ProjectInspection } from "../projects/project.service.js";
+import { buildPrompt } from "./prompt.builder.js";
+
+export interface WorkflowFile {
+  absolutePath: string;
+  uploadName: string;
+  contentType: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export interface WorkflowRunInput {
+  prompt: string;
+  manifest: Record<string, unknown>;
+  files: WorkflowFile[];
+  requestId: string;
+}
 
 export interface BuildAnalysisContextInput {
   analysisId: string;
+  requestId: string;
   goal: string;
   baseRef: string;
   currentRef: string;
@@ -28,16 +42,16 @@ export interface BuiltAnalysisContext {
   selectedBytes: number;
 }
 
-export function buildAnalysisContext(
-  input: BuildAnalysisContextInput
-): BuiltAnalysisContext {
+export async function buildAnalysisContext(
+  input: BuildAnalysisContextInput,
+): Promise<BuiltAnalysisContext> {
   const maxFiles = input.maxFiles ?? 30;
-  const maxBytes = input.maxBytes ?? 20 * 1024 * 1024;
+  const maxBytes = input.maxBytes ?? 500_000;
   const baseFiles = new Map(
-    input.baseInspection.files.map((file) => [file.relativePath, file])
+    input.baseInspection.files.map((file) => [file.relativePath, file]),
   );
   const currentFiles = new Map(
-    input.currentInspection.files.map((file) => [file.relativePath, file])
+    input.currentInspection.files.map((file) => [file.relativePath, file]),
   );
   const rankedChanges = [...input.comparison.changedFiles].sort((left, right) => {
     const leftBase = baseFiles.get(left.previousPath ?? left.relativePath);
@@ -56,54 +70,60 @@ export function buildAnalysisContext(
 
   for (const change of rankedChanges) {
     const basePath = change.previousPath ?? change.relativePath;
-    const currentPath = change.relativePath;
-    const candidates: Array<{
-      revision: "base" | "current";
-      file: DiscoveredFile;
-    }> = [];
+    const candidates: Array<{ revision: "base" | "current"; file: DiscoveredFile }> = [];
     const baseFile = baseFiles.get(basePath);
-    const currentFile = currentFiles.get(currentPath);
+    const currentFile = currentFiles.get(change.relativePath);
     if (baseFile?.kind === "config" || baseFile?.kind === "source") {
       candidates.push({ revision: "base", file: baseFile });
     }
     if (currentFile?.kind === "config" || currentFile?.kind === "source") {
       candidates.push({ revision: "current", file: currentFile });
     }
-    const candidateBytes = candidates.reduce(
-      (total, candidate) => total + candidate.file.sizeBytes,
-      0
-    );
-    if (files.length + candidates.length > maxFiles || selectedBytes + candidateBytes > maxBytes) {
+    const candidateBytes = candidates.reduce((total, c) => total + c.file.sizeBytes, 0);
+    if (
+      files.length + candidates.length > maxFiles ||
+      selectedBytes + candidateBytes > maxBytes
+    ) {
       continue;
     }
     for (const candidate of candidates) {
       const uploadName = makeUploadName(files.length, candidate.file.extension);
-      files.push({
+      const sha256 = await hashFile(candidate.file.absolutePath);
+      const workflowFile: WorkflowFile = {
         absolutePath: candidate.file.absolutePath,
         uploadName,
-        contentType: contentTypeForExtension(candidate.file.extension)
-      });
+        contentType: contentTypeForExtension(candidate.file.extension),
+        sha256,
+        sizeBytes: candidate.file.sizeBytes,
+      };
+      files.push(workflowFile);
       attachments.push({
         id: `${candidate.revision}-file-${files.length}`,
         upload_name: uploadName,
         relative_path: candidate.file.relativePath,
         revision: candidate.revision,
         kind: candidate.file.kind,
-        size_bytes: candidate.file.sizeBytes
+        content_type: workflowFile.contentType,
+        size_bytes: candidate.file.sizeBytes,
+        sha256,
       });
       selectedBytes += candidate.file.sizeBytes;
     }
   }
 
+  const projectName =
+    input.currentInspection.rootPath.split(/[\\/]/).at(-1) ?? "unknown";
+
   const manifest = {
     schema_version: "1.0",
+    request_id: input.requestId,
     analysis_id: input.analysisId,
     stage: "impact_analysis",
     locale: "en-US",
     project: {
-      name: input.currentInspection.rootPath.split(/[\\/]/).at(-1),
+      name: projectName,
       engine: detectEngine(input.currentInspection),
-      root_label: input.currentInspection.rootPath.split(/[\\/]/).at(-1)
+      root_label: projectName,
     },
     revision: {
       base_ref: input.baseRef,
@@ -112,7 +132,7 @@ export function buildAnalysisContext(
       current_commit: input.comparison.currentCommit,
       current_is_worktree: input.comparison.currentIsWorktree,
       has_uncommitted_changes:
-        input.currentInspection.repository.hasUncommittedChanges
+        input.currentInspection.repository.hasUncommittedChanges,
     },
     analysis_request: {
       goal: input.goal,
@@ -122,67 +142,46 @@ export function buildAnalysisContext(
         "gameplay_impact",
         "flow_safety",
         "recovery",
-        "bug_risk"
-      ]
+        "bug_risk",
+      ],
     },
     repository_context: {
       summaries: {
         base: input.baseInspection.summary,
-        current: input.currentInspection.summary
+        current: input.currentInspection.summary,
       },
       changed_files: input.comparison.changedFiles,
       unified_diff: input.comparison.unifiedDiff,
       diff_truncated: input.comparison.diffTruncated,
-      trees: {
-        base: input.baseInspection.files.map((file) => ({
-          path: file.relativePath,
-          kind: file.kind,
-          size_bytes: file.sizeBytes
-        })),
-        current: input.currentInspection.files.map((file) => ({
-          path: file.relativePath,
-          kind: file.kind,
-          size_bytes: file.sizeBytes
-        }))
-      }
     },
     deterministic_findings: input.deterministicFindings,
     attachments,
     limits: {
       max_requested_files: maxFiles,
       max_total_bytes: maxBytes,
-      max_follow_up_rounds: 2
-    }
+      max_follow_up_rounds: 2,
+    },
   };
 
   return {
     selectedFileCount: files.length,
     selectedBytes,
     workflowInput: {
-      prompt: buildPrompt(input.goal),
+      prompt: buildPrompt({ goal: input.goal }),
       manifest,
-      files
-    }
+      files,
+      requestId: input.requestId,
+    },
   };
 }
 
-function buildPrompt(goal: string): string {
-  return [
-    "You are the Craftland Quality Analyzer.",
-    "Compare the base revision against the current revision using only the repository evidence described in Manifest and supplied in DataList.",
-    "Distinguish confirmed facts, probable inferences, hypotheses, and unknowns.",
-    "Never invent files, symbols, config keys, values, or line numbers.",
-    "Every finding must cite repository-relative file paths and line ranges.",
-    "Keep JSON property names in English; never translate JSON keys.",
-    "Use canonical top-level keys: summary, findings, inferences, hypotheses, unknowns, recommendations, stage, and status.",
-    "In summary use: overall_assessment, risk_level, confidence, and change_scope; change_scope must be low, medium, or high.",
-    "In each finding use: id, title, dimension, severity, certainty, description, evidence, impact, flow_safety, and recovery_risk.",
-    "In each recommendation use: id, priority, dimension, recommendation, justification, and evidence.",
-    "Write all human-readable string values in English.",
-    "Return exactly one JSON object matching schema version 1.0.",
-    "Do not add Markdown outside the JSON object.",
-    `User goal: ${goal}`
-  ].join("\n");
+async function hashFile(absolutePath: string): Promise<string> {
+  try {
+    const content = await readFile(absolutePath);
+    return createHash("sha256").update(content).digest("hex");
+  } catch {
+    return "unavailable";
+  }
 }
 
 function makeUploadName(index: number, extension: string): string {
@@ -191,21 +190,15 @@ function makeUploadName(index: number, extension: string): string {
 }
 
 function contentTypeForExtension(extension: string): string {
-  if (extension === ".csv") {
-    return "text/csv";
-  }
-  if (extension === ".json") {
-    return "application/json";
-  }
-  if (extension === ".yaml" || extension === ".yml") {
-    return "application/yaml";
-  }
+  if (extension === ".csv") return "text/csv";
+  if (extension === ".json") return "application/json";
+  if (extension === ".yaml" || extension === ".yml") return "application/yaml";
   return "text/plain";
 }
 
 function detectEngine(inspection: ProjectInspection): string {
   const paths = new Set(
-    inspection.files.map((file) => file.relativePath.toLowerCase())
+    inspection.files.map((file) => file.relativePath.toLowerCase()),
   );
   if (
     paths.has("projectsettings/projectversion.txt") ||
@@ -214,10 +207,4 @@ function detectEngine(inspection: ProjectInspection): string {
     return "unity_or_craftland";
   }
   return "unknown";
-}
-
-export function hashManifest(manifest: Record<string, unknown>): string {
-  return createHash("sha256")
-    .update(JSON.stringify(manifest))
-    .digest("hex");
 }
