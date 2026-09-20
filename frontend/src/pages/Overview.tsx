@@ -1,5 +1,5 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Empty, Row, Skeleton, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Skeleton, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -87,9 +87,10 @@ export function OverviewPage(): React.JSX.Element {
                   }}
                   style={
                     project.id === active?.id
-                      ? { borderColor: "#1677ff", borderWidth: 2 }
-                      : undefined
+                      ? { borderColor: "#1677ff", borderWidth: 2, height: "100%" }
+                      : { height: "100%" }
                   }
+                  styles={{ body: { minHeight: 132 } }}
                   title={project.name}
                   extra={
                     project.id === active?.id ? (
@@ -109,9 +110,14 @@ export function OverviewPage(): React.JSX.Element {
                     )
                   }
                 >
-                  <Typography.Text code ellipsis style={{ fontSize: 12, maxWidth: "100%" }}>
-                    {project.localPath}
-                  </Typography.Text>
+                  <Tooltip title={project.localPath}>
+                    <Typography.Paragraph
+                      code
+                      style={{ fontSize: 12, wordBreak: "break-all", marginBottom: 0 }}
+                    >
+                      {project.localPath}
+                    </Typography.Paragraph>
+                  </Tooltip>
                   <div style={{ marginTop: 8 }}>
                     {verdict ? (
                       <Link
@@ -138,6 +144,14 @@ export function OverviewPage(): React.JSX.Element {
               hoverable
               onClick={() => setBrowserOpen(true)}
               style={{ borderStyle: "dashed", textAlign: "center", height: "100%" }}
+              styles={{
+                body: {
+                  minHeight: 132,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+              }}
             >
               <Button type="link" icon={<PlusOutlined />}>
                 Add project

@@ -27,11 +27,121 @@ import {
 
 const FORM_LABEL: React.CSSProperties = { display: "block", marginBottom: 4 };
 
+const PROMPT_EXAMPLES = [
+  "What if sword price goes from 100 to 150 in ShopData?",
+  "Set drop rate to 0.05 for the gold chest",
+  "Bump Night 3 zombie HP by 50 for id 12",
+];
+
+export interface PromptDraft {
+  filePath?: string;
+  keyColumn?: string;
+  keyValue?: string;
+  column?: string;
+  newValue?: string;
+  notes: string[];
+}
+
+function normalizeToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function cleanValue(value: string): string {
+  return value.replace(/^[“”"']+|[“”"']+$/g, "").replace(/[.,;!?]+$/g, "");
+}
+
+/** Heuristic prompt → structured edit. Only fills what it can defend; the rest stays manual. */
+export function draftEditFromPrompt(prompt: string, csvFiles: string[]): PromptDraft {
+  const draft: PromptDraft = { notes: [] };
+  const flat = normalizeToken(prompt);
+  if (flat.length === 0) {
+    draft.notes.push("Describe the hypothetical first — e.g. “set Price to 150 for Id 1”.");
+    return draft;
+  }
+
+  let bestFile: string | undefined;
+  let bestScore = 0;
+  for (const file of csvFiles) {
+    const base = file.split("/").slice(-1)[0] ?? file;
+    for (const candidate of [file, base, base.replace(/\.csv$/i, "")]) {
+      const token = normalizeToken(candidate);
+      if (token.length >= 4 && flat.includes(token) && token.length > bestScore) {
+        bestFile = file;
+        bestScore = token.length;
+      }
+    }
+  }
+  if (bestFile) {
+    draft.filePath = bestFile;
+    draft.notes.push(`Detected file ${bestFile}.`);
+  } else {
+    draft.notes.push("No project CSV matched — pick the file below.");
+  }
+
+  const setMatch = /set\s+([A-Za-z_]\w*)\s*(?:to|=|→|->)\s*(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/i.exec(
+    prompt,
+  );
+  const changeMatch =
+    setMatch === null
+      ? /([A-Za-z_]\w*)\s+from\s+[^\s,;]+\s+to\s+(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/i.exec(prompt)
+      : null;
+  const assignMatch =
+    setMatch === null && changeMatch === null
+      ? /([A-Za-z_]\w*)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/.exec(prompt)
+      : null;
+  const bumpMatch =
+    setMatch === null && changeMatch === null && assignMatch === null
+      ? /(?:bump|raise|increase|lower|decrease|reduce)\s+(?:the\s+)?([A-Za-z_][\w ]*?)\s+by\s+([^\s,;]+)/i.exec(
+          prompt,
+        )
+      : null;
+
+  if (setMatch) {
+    draft.column = setMatch[1];
+    draft.newValue = cleanValue(setMatch[2] ?? setMatch[3] ?? setMatch[4] ?? "");
+  } else if (changeMatch) {
+    draft.column = changeMatch[1];
+    draft.newValue = cleanValue(changeMatch[2] ?? changeMatch[3] ?? changeMatch[4] ?? "");
+  } else if (assignMatch) {
+    draft.column = assignMatch[1];
+    draft.newValue = cleanValue(assignMatch[2] ?? assignMatch[3] ?? assignMatch[4] ?? "");
+  }
+  if (draft.column && draft.newValue) {
+    draft.notes.push(`Detected ${draft.column} → ${draft.newValue}.`);
+  } else if (bumpMatch) {
+    draft.column = bumpMatch[1].trim().replace(/\s+/g, "");
+    draft.notes.push(
+      "That reads as a relative change (“by …”) — confirm the absolute new value below.",
+    );
+  } else {
+    draft.notes.push("No column/value pattern found — try “set Price to 150”.");
+  }
+
+  const keyColumnMatch = /\bkey\s+column\s+([A-Za-z_]\w*)/i.exec(prompt);
+  if (keyColumnMatch) draft.keyColumn = keyColumnMatch[1];
+
+  const idMatch =
+    /(?:\bfor\s+)?\b(id|key)\b\s*[=:#]?\s*(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/i.exec(prompt) ??
+    /\bfor\s+"([^"]+)"/i.exec(prompt);
+  if (idMatch) {
+    const value = cleanValue(idMatch[2] ?? idMatch[3] ?? idMatch[4] ?? idMatch[1] ?? "");
+    if (value.length > 0 && value.toLowerCase() !== "id" && value.toLowerCase() !== "key") {
+      draft.keyValue = value;
+      draft.notes.push(`Detected row key ${value}.`);
+    }
+  } else {
+    draft.notes.push("No row key found — add which row this edit targets.");
+  }
+  return draft;
+}
+
 export function WhatIfPage(): React.JSX.Element {
   const { active } = useProjects();
   const inspection = useInspectQuery(active?.localPath);
   const whatIf = useWhatIfMutation();
 
+  const [prompt, setPrompt] = useState("");
+  const [draftNotes, setDraftNotes] = useState<string[]>([]);
   const [filePath, setFilePath] = useState("");
   const [baseRef, setBaseRef] = useState("HEAD");
   const [keyColumn, setKeyColumn] = useState("");
@@ -73,6 +183,17 @@ export function WhatIfPage(): React.JSX.Element {
     newValue.length > 0 &&
     !whatIf.isPending;
 
+  const draftFromPrompt = (): void => {
+    const draft = draftEditFromPrompt(prompt, csvFiles);
+    if (draft.filePath && filePath.trim().length === 0) setFilePath(draft.filePath);
+    if (draft.keyColumn && keyColumn.trim().length === 0) setKeyColumn(draft.keyColumn);
+    if (draft.keyValue && keyValue.trim().length === 0) setKeyValue(draft.keyValue);
+    if (draft.column && column.trim().length === 0) setColumn(draft.column);
+    if (draft.newValue && newValue.length === 0) setNewValue(draft.newValue);
+    if (prompt.trim().length > 0 && goal.trim().length === 0) setGoal(prompt.trim());
+    setDraftNotes(draft.notes);
+  };
+
   const runScenario = (): void => {
     setPinned(null);
     whatIf.mutate({
@@ -108,6 +229,8 @@ export function WhatIfPage(): React.JSX.Element {
   };
 
   const loadScenario = (scenario: WhatIfScenario): void => {
+    setPrompt(scenario.goal);
+    setDraftNotes([]);
     setFilePath(scenario.filePath);
     setBaseRef(scenario.baseRef);
     setKeyColumn(scenario.keyColumn);
@@ -131,11 +254,69 @@ export function WhatIfPage(): React.JSX.Element {
         What-if Lab
       </Typography.Title>
       <Typography.Paragraph type="secondary">
-        Test a single config edit before touching the repo. The edit is applied in memory only —
-        nothing is written to {active.name}.
+        Describe the hypothetical in plain words, confirm the exact edit, then evaluate. The edit
+        is applied in memory only — nothing is written to {active.name}.
       </Typography.Paragraph>
 
-      <Card title="Hypothetical edit">
+      <Card
+        title="1 · Describe the hypothetical"
+        style={{ marginBottom: 16, boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}
+      >
+        <Input.TextArea
+          rows={3}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="e.g. What if sword price goes from 100 to 150 in ShopData?"
+        />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          {PROMPT_EXAMPLES.map((example) => (
+            <Tag
+              key={example}
+              style={{ cursor: "pointer", padding: "4px 10px" }}
+              onClick={() => setPrompt(example)}
+            >
+              {example}
+            </Tag>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <div>
+            <Typography.Text strong style={FORM_LABEL}>
+              Base ref
+            </Typography.Text>
+            <Input
+              value={baseRef}
+              onChange={(event) => setBaseRef(event.target.value)}
+              style={{ width: 160 }}
+            />
+          </div>
+          <div style={{ alignSelf: "flex-end" }}>
+            <Button type="primary" onClick={draftFromPrompt} disabled={prompt.trim().length === 0}>
+              Draft the edit
+            </Button>
+          </div>
+        </div>
+        {draftNotes.length > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 12 }}
+            message="Drafted from your description — confirm below before evaluating."
+            description={
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                {draftNotes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            }
+          />
+        )}
+      </Card>
+
+      <Card
+        title="2 · Confirm the exact edit"
+        style={{ marginBottom: 16, boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}
+      >
         {inspection.isLoading && <Skeleton active />}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: "2 1 280px" }}>
@@ -158,12 +339,6 @@ export function WhatIfPage(): React.JSX.Element {
                 options={csvFiles.map((path) => ({ value: path, label: path }))}
               />
             )}
-          </div>
-          <div style={{ flex: "1 1 140px" }}>
-            <Typography.Text strong style={FORM_LABEL}>
-              Base ref
-            </Typography.Text>
-            <Input value={baseRef} onChange={(event) => setBaseRef(event.target.value)} />
           </div>
           <div style={{ flex: "1 1 140px" }}>
             <Typography.Text strong style={FORM_LABEL}>
@@ -252,7 +427,7 @@ export function WhatIfPage(): React.JSX.Element {
               </Button>
             </span>
           }
-          style={{ marginTop: 16 }}
+          style={{ marginTop: 16, boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}
         >
           {result.error && <Alert type="error" showIcon message={result.error} />}
           {result.findings.length > 0 ? (
@@ -273,7 +448,10 @@ export function WhatIfPage(): React.JSX.Element {
         </Card>
       )}
 
-      <Card title={`Saved scenarios (${projectScenarios.length})`} style={{ marginTop: 16 }}>
+      <Card
+        title={`Saved scenarios (${projectScenarios.length})`}
+        style={{ marginTop: 16, boxShadow: "0 1px 6px rgba(15, 23, 42, 0.08)" }}
+      >
         {projectScenarios.length === 0 ? (
           <Empty description="No saved scenarios — evaluate an edit, then save it." />
         ) : (
