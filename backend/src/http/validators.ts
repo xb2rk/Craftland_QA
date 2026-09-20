@@ -21,6 +21,20 @@ export const listAnalysesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
+export const browseProjectsQuerySchema = z.object({
+  path: z.string().trim().max(2048).optional(),
+});
+
+export const projectRefsQuerySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+});
+
+export const searchCommitsQuerySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  search: z.string().trim().max(255).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
 export type InspectProjectBody = z.infer<typeof inspectProjectBodySchema>;
 export type CreateAnalysisBody = z.infer<typeof createAnalysisBodySchema>;
 export type CompareAnalysesBody = z.infer<typeof compareAnalysesBodySchema>;

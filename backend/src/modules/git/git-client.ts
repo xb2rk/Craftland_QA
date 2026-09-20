@@ -47,6 +47,36 @@ export class GitClient {
   listRevisionFiles(repositoryRoot: string, revision: string): Promise<string> {
     return this.run(repositoryRoot, ["ls-tree", "-r", "--name-only", revision]);
   }
+
+  listBranches(repositoryRoot: string): Promise<string> {
+    return this.run(repositoryRoot, [
+      "for-each-ref",
+      "--format=%(refname:short)%00%(objectname:short)%00%(upstream:short)",
+      "refs/heads",
+    ]);
+  }
+
+  listCommits(
+    repositoryRoot: string,
+    options: { search?: string; limit?: number } = {},
+  ): Promise<string> {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    const args = [
+      "log",
+      `-n${limit}`,
+      "--format=%H%x00%h%x00%an%x00%ad%x00%s",
+      "--date=short",
+    ];
+    const search = options.search?.trim();
+    if (search) {
+      if (/^[0-9a-f]{4,40}$/i.test(search)) {
+        args.push(search);
+      } else {
+        args.push("--grep", search, "--regexp-ignore-case");
+      }
+    }
+    return this.run(repositoryRoot, args);
+  }
 }
 
 export const sharedGitClient = new GitClient();

@@ -7,13 +7,21 @@ import { errorHandler, notFoundHandler } from "./middlewares/error.js";
 import { asyncRoute } from "../shared/async-handler.js";
 import { NotFoundError } from "../shared/errors.js";
 import {
+  browseProjectsQuerySchema,
   compareAnalysesBodySchema,
   createAnalysisBodySchema,
   inspectProjectBodySchema,
   listAnalysesQuerySchema,
+  projectRefsQuerySchema,
+  searchCommitsQuerySchema,
 } from "./validators.js";
 import type { AnalysisService } from "../modules/analysis/analysis.service.js";
-import { inspectLocalProject } from "../modules/projects/project.service.js";
+import {
+  browseDirectories,
+  inspectLocalProject,
+  listProjectBranches,
+  searchProjectCommits,
+} from "../modules/projects/project.service.js";
 
 export interface AppDependencies {
   config: AppConfig;
@@ -54,6 +62,42 @@ export function createApp(deps: AppDependencies): express.Express {
         ...inspection,
         files: inspection.files.slice(0, 200),
         totalFiles: inspection.files.length,
+      });
+    }),
+  );
+
+  app.get(
+    "/api/projects/browse",
+    asyncRoute(async (req, res) => {
+      const query = browseProjectsQuerySchema.parse(req.query);
+      res.json(
+        await browseDirectories(query.path, deps.config.analyzedRoots),
+      );
+    }),
+  );
+
+  app.get(
+    "/api/projects/branches",
+    asyncRoute(async (req, res) => {
+      const query = projectRefsQuerySchema.parse(req.query);
+      res.json({
+        branches: await listProjectBranches(query.localPath, {
+          allowedRoots: deps.config.analyzedRoots,
+        }),
+      });
+    }),
+  );
+
+  app.get(
+    "/api/projects/commits",
+    asyncRoute(async (req, res) => {
+      const query = searchCommitsQuerySchema.parse(req.query);
+      res.json({
+        commits: await searchProjectCommits(query.localPath, {
+          search: query.search,
+          limit: query.limit,
+          allowedRoots: deps.config.analyzedRoots,
+        }),
       });
     }),
   );
@@ -114,6 +158,9 @@ function buildOpenApiDocument(): Record<string, unknown> {
     paths: {
       "/api/health": { get: { summary: "Service health" } },
       "/api/projects/inspect": { post: { summary: "Inspect a local Git project" } },
+      "/api/projects/browse": { get: { summary: "Browse allowed directories for project selection" } },
+      "/api/projects/branches": { get: { summary: "List branches of a local Git project" } },
+      "/api/projects/commits": { get: { summary: "Search commits of a local Git project" } },
       "/api/analysis-runs": {
         post: { summary: "Start an analysis run" },
         get: { summary: "List analysis runs" },
