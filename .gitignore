@@ -1,0 +1,21 @@
+# Local environment and credentials
+.env
+.env.local
+.env.*.local
+
+# Dependencies and build outputs
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+
+# Runtime workspaces and logs
+.analysis-workspaces/
+logs/
+*.log
+
+# Editors and operating system
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

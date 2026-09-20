@@ -1,0 +1,8 @@
+{
+  "name": "craftland-quality-analyzer",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --recursive build",
+    "dev": "pnpm --parallel --filter @craftland-analyzer/backend --filter @craftland-analyzer/frontend dev"
+  }
+}
