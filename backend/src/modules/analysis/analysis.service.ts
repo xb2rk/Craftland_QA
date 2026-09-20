@@ -9,6 +9,7 @@ import {
   type BuiltAnalysisContext,
 } from "../ai/context-builder.js";
 import { InseaWorkflowClient } from "../ai/insea.client.js";
+import { normalizeAiReport } from "../ai/report-normalizer.js";
 import type {
   AnalysisRun,
   AiStatus,
@@ -307,7 +308,9 @@ export class AnalysisService {
         maxFiles: this.config.ai.maxFiles,
         maxBytes: this.config.ai.maxContextBytes,
       });
-      const aiReport = await this.aiClient.run(built.workflowInput);
+      const aiReport = normalizeAiReport(
+        await this.aiClient.run(built.workflowInput),
+      );
       return { aiReport, aiStatus: "completed" };
     } catch (error) {
       getLogger().warn({ err: error }, "AI stage failed, keeping deterministic results");
