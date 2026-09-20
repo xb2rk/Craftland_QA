@@ -43,6 +43,20 @@ export const whatIfBodySchema = z.object({
   goal: z.string().trim().max(4000).optional(),
 });
 
+export const writerBodySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  baseRef: z.string().trim().min(1).max(255).default("HEAD~1"),
+  currentRef: z.string().trim().min(1).max(255).default("WORKTREE"),
+  kind: z.enum(["commit", "pr"]),
+  goal: z.string().trim().max(4000).optional(),
+});
+
+export const localizationBodySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  baseRef: z.string().trim().min(1).max(255).default("WORKTREE"),
+  goal: z.string().trim().max(4000).optional(),
+});
+
 export const askQuestionBodySchema = z.object({
   question: z.string().trim().min(1).max(2000),
 });
