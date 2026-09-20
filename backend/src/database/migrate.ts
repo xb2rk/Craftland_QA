@@ -8,6 +8,13 @@ import { loadConfig } from "../config/env.js";
 import { createDatabasePool } from "./pool.js";
 
 dotenv.config({ quiet: true });
+dotenv.config({
+  quiet: true,
+  path: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../.env",
+  ),
+});
 
 function splitStatements(sql: string): string[] {
   return sql

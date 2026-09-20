@@ -1,4 +1,6 @@
 import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createApp } from "./http/app.js";
 import { loadConfig } from "./config/env.js";
@@ -9,6 +11,13 @@ import { createAnalysisRunRepository } from "./persistence/factory.js";
 import { createLogger, setLogger } from "./shared/logger.js";
 
 dotenv.config({ quiet: true });
+dotenv.config({
+  quiet: true,
+  path: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../.env",
+  ),
+});
 
 async function main(): Promise<void> {
   const config = loadConfig();

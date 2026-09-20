@@ -1,18 +1,29 @@
 import { z } from "zod";
 
+const emptyToUndefined = (value: unknown): unknown =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
+
+const optionalNonEmptyString = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().min(1).optional(),
+);
+
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   PERSISTENCE_DRIVER: z.enum(["memory", "mysql"]).default("memory"),
-  DB_HOST: z.string().trim().min(1).optional(),
+  DB_HOST: optionalNonEmptyString,
   DB_PORT: z.coerce.number().int().min(1).max(65535).default(3306),
-  DB_NAME: z.string().trim().min(1).optional(),
-  DB_USER: z.string().trim().min(1).optional(),
+  DB_NAME: optionalNonEmptyString,
+  DB_USER: optionalNonEmptyString,
   DB_PASSWORD: z.string().default(""),
-  AI_WORKFLOW_URL: z.string().trim().url().optional().or(z.literal("")),
-  AI_WORKFLOW_API_KEY: z.string().default(""),
+  AI_WORKFLOW_URL: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().url().optional(),
+  ),
+  AI_WORKFLOW_API_KEY: z.preprocess(emptyToUndefined, optionalNonEmptyString),
   AI_WORKFLOW_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),
   AI_WORKFLOW_MAX_CONTEXT_BYTES: z.coerce
     .number()
@@ -27,7 +38,10 @@ const envSchema = z.object({
     .min(0)
     .max(5)
     .default(2),
-  ANALYZED_ROOTS: z.string().trim().optional(),
+  ANALYZED_ROOTS: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().optional(),
+  ),
 });
 
 export type AppConfig = {
@@ -69,8 +83,8 @@ export function loadConfig(
   }
   const env = parsed.data;
 
-  const aiConfigured =
-    (env.AI_WORKFLOW_URL ?? "").length > 0 && env.AI_WORKFLOW_API_KEY.length > 0;
+  const aiUrl = env.AI_WORKFLOW_URL;
+  const aiKey = env.AI_WORKFLOW_API_KEY;
 
   if (env.PERSISTENCE_DRIVER === "mysql") {
     if (!env.DB_HOST || !env.DB_NAME || !env.DB_USER) {
@@ -95,11 +109,11 @@ export function loadConfig(
             password: env.DB_PASSWORD,
           }
         : { driver: "memory" },
-    ai: aiConfigured
+    ai: aiUrl !== undefined && aiKey !== undefined
       ? {
           configured: true,
-          url: env.AI_WORKFLOW_URL!,
-          apiKey: env.AI_WORKFLOW_API_KEY,
+          url: aiUrl,
+          apiKey: aiKey,
           timeoutMs: env.AI_WORKFLOW_TIMEOUT_MS,
           maxContextBytes: env.AI_WORKFLOW_MAX_CONTEXT_BYTES,
           maxFiles: env.AI_WORKFLOW_MAX_FILES,
