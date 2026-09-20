@@ -1,9 +1,9 @@
-import { Alert, Button, Card, Input, Select, Skeleton, Table, Tag } from "antd";
+import { Alert, Button, Card, Input, List, Select, Skeleton, Table, Tag, Typography, Upload } from "antd";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { useAnalyses, useCompareMutation } from "../api/hooks.js";
-import { ApiError, type NormalizedAiReport } from "../api/types.js";
+import { useAnalyses, useCompareMutation, useImportRunMutation } from "../api/hooks.js";
+import { ApiError, type AnalysisRun, type NormalizedAiReport } from "../api/types.js";
 import { riskColor } from "../components/system-map.js";
 
 function runRisk(run: { aiReport?: unknown }): string {
@@ -11,10 +11,26 @@ function runRisk(run: { aiReport?: unknown }): string {
   return report?.summary?.risk_level ?? "—";
 }
 
+function changePreview(run: AnalysisRun): React.JSX.Element {
+  const files = run.comparison?.changedFiles ?? [];
+  if (files.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
+  return (
+    <span>
+      {files.slice(0, 3).map((file) => (
+        <Tag key={file.relativePath} style={{ marginBottom: 2 }}>
+          {file.relativePath.split("/").slice(-1)[0]}
+        </Tag>
+      ))}
+      {files.length > 3 && <Tag>+{files.length - 3} more</Tag>}
+    </span>
+  );
+}
+
 export function RunsPage(): React.JSX.Element {
   const navigate = useNavigate();
   const analyses = useAnalyses(100);
   const compare = useCompareMutation();
+  const importRun = useImportRunMutation();
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [query, setQuery] = useState("");
   const [compareMode, setCompareMode] = useState(false);
@@ -66,6 +82,20 @@ export function RunsPage(): React.JSX.Element {
           >
             {compareMode ? "Done picking" : "Compare two runs"}
           </Button>
+          <Upload
+            accept="application/json"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              void file
+                .text()
+                .then((text) => importRun.mutate(JSON.parse(text) as Record<string, unknown>, {
+                  onSuccess: (run) => navigate(`/runs/${run.id}`),
+                }));
+              return false;
+            }}
+          >
+            <Button loading={importRun.isPending}>Import run</Button>
+          </Upload>
         </div>
       }
     >
@@ -80,6 +110,23 @@ export function RunsPage(): React.JSX.Element {
       <Table
         rowKey="id"
         dataSource={rows}
+        expandable={{
+          expandedRowRender: (run) => (
+            <List
+              size="small"
+              dataSource={(run.comparison?.changedFiles ?? []).slice(0, 10)}
+              renderItem={(file) => (
+                <List.Item>
+                  <Typography.Text code style={{ fontSize: 12 }}>
+                    {file.relativePath}
+                  </Typography.Text>{" "}
+                  <Tag>{file.changeType}</Tag>
+                </List.Item>
+              )}
+            />
+          ),
+          rowExpandable: (run) => (run.comparison?.changedFiles.length ?? 0) > 0,
+        }}
         rowSelection={
           compareMode
             ? {
@@ -114,6 +161,11 @@ export function RunsPage(): React.JSX.Element {
             title: "Issues",
             dataIndex: "findings",
             render: (findings: Array<unknown>) => findings.length,
+          },
+          {
+            title: "Change",
+            key: "change",
+            render: (_, run) => changePreview(run),
           },
           {
             title: "Compared",
@@ -160,6 +212,14 @@ export function RunsPage(): React.JSX.Element {
           showIcon
           style={{ marginTop: 12 }}
           message={`${compare.error.code}: ${compare.error.message}`}
+        />
+      )}
+      {importRun.error instanceof ApiError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={`${importRun.error.code}: ${importRun.error.message}`}
         />
       )}
     </Card>

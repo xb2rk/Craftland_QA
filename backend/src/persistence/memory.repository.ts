@@ -1,4 +1,4 @@
-import type { AnalysisRun } from "../modules/analysis/analysis-run.entity.js";
+import type { AnalysisRun, RunExchange } from "../modules/analysis/analysis-run.entity.js";
 import type { AnalysisRunRepository } from "./repository.js";
 
 export class InMemoryAnalysisRunRepository implements AnalysisRunRepository {
@@ -18,6 +18,19 @@ export class InMemoryAnalysisRunRepository implements AnalysisRunRepository {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, limit)
       .map((run) => structuredClone(run));
+  }
+
+  async appendExchange(runId: string, exchange: RunExchange): Promise<RunExchange[]> {
+    const run = this.runs.get(runId);
+    if (run === undefined) return [];
+    const exchanges = [...(run.exchanges ?? []), structuredClone(exchange)];
+    this.runs.set(runId, { ...run, exchanges });
+    return structuredClone(exchanges);
+  }
+
+  async listExchanges(runId: string): Promise<RunExchange[]> {
+    const run = this.runs.get(runId);
+    return run?.exchanges ? structuredClone(run.exchanges) : [];
   }
 
   /** Mark stale running jobs as failed after restart. No-op for memory. */

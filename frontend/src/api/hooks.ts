@@ -46,6 +46,33 @@ export function useInspectMutation() {
   });
 }
 
+export function useQuestions(id: string | undefined) {
+  return useQuery({
+    queryKey: ["questions", id],
+    queryFn: () => api.listQuestions(id!),
+    enabled: id !== undefined && id.length > 0,
+  });
+}
+
+export function useAskQuestionMutation(id: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (question: string) => api.askQuestion(id!, question),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["questions", id] });
+      void queryClient.invalidateQueries({ queryKey: ["analysis", id] });
+    },
+  });
+}
+
+export function useImportRunMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (run: Record<string, unknown>) => api.importRun(run),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["analyses"] }),
+  });
+}
+
 export function useStartAnalysisMutation() {
   const queryClient = useQueryClient();
   return useMutation({

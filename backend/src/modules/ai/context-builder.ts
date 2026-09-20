@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import type { Finding } from "../analysis/analysis-run.entity.js";
+import type { AnalysisLens, Finding } from "../analysis/analysis-run.entity.js";
 import type { DiscoveredFile } from "../discovery/file-classifier.js";
 import type { GitComparison } from "../git/git-comparison.js";
 import type { ProjectInspection } from "../projects/project.service.js";
@@ -26,6 +26,7 @@ export interface BuildAnalysisContextInput {
   analysisId: string;
   requestId: string;
   goal: string;
+  lens?: AnalysisLens;
   baseRef: string;
   currentRef: string;
   baseInspection: ProjectInspection;
@@ -136,6 +137,7 @@ export async function buildAnalysisContext(
     },
     analysis_request: {
       goal: input.goal,
+      lens: input.lens ?? "pre_merge",
       quality_dimensions: [
         "config_consistency",
         "code_impact",
@@ -167,7 +169,7 @@ export async function buildAnalysisContext(
     selectedFileCount: files.length,
     selectedBytes,
     workflowInput: {
-      prompt: buildPrompt({ goal: input.goal }),
+      prompt: buildPrompt({ goal: input.goal, lens: input.lens }),
       manifest,
       files,
       requestId: input.requestId,

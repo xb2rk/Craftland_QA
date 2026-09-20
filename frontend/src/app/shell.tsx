@@ -79,7 +79,20 @@ function ShellBody(): React.JSX.Element {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}>
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          height: "100vh",
+          overflowY: "auto",
+          zIndex: 10,
+        }}
+      >
         <Typography.Title
           level={4}
           style={{ color: "#fff", padding: "16px 16px 8px", margin: 0 }}
@@ -93,7 +106,7 @@ function ShellBody(): React.JSX.Element {
           items={MENU_ITEMS}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ marginLeft: collapsed ? 80 : 200, minHeight: "100vh" }}>
         <Header
           style={{
             background: "#fff",
@@ -101,6 +114,10 @@ function ShellBody(): React.JSX.Element {
             alignItems: "center",
             gap: 12,
             padding: "0 24px",
+            position: "sticky",
+            top: 0,
+            zIndex: 5,
+            borderBottom: "1px solid #e5e7eb",
           }}
         >
           <Typography.Text strong>Craftland Quality Analyzer</Typography.Text>

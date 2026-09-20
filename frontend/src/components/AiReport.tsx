@@ -7,6 +7,63 @@ function asReport(value: unknown): NormalizedAiReport | null {
   return value as NormalizedAiReport;
 }
 
+function renderUnknown(unknown: unknown): React.JSX.Element {
+  if (typeof unknown === "string") return <>{unknown}</>;
+  if (typeof unknown === "object" && unknown !== null) {
+    const item = unknown as { id?: unknown; statement?: unknown; evidence?: unknown };
+    return (
+      <span>
+        {item.id !== undefined && <Tag>{String(item.id)}</Tag>}{" "}
+        {item.statement !== undefined ? (
+          <>{String(item.statement)}</>
+        ) : (
+          <Typography.Text code style={{ whiteSpace: "pre-wrap" }}>
+            {JSON.stringify(unknown)}
+          </Typography.Text>
+        )}
+        {item.evidence !== undefined && (
+          <>
+            <br />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Evidence:{" "}
+              {Array.isArray(item.evidence)
+                ? item.evidence
+                    .map((entry) =>
+                      typeof entry === "object" && entry !== null
+                        ? Object.values(entry as Record<string, unknown>)
+                            .map(String)
+                            .join(" ")
+                        : String(entry),
+                    )
+                    .join(" · ")
+                : typeof item.evidence === "object"
+                  ? JSON.stringify(item.evidence)
+                  : String(item.evidence)}
+            </Typography.Text>
+          </>
+        )}
+      </span>
+    );
+  }
+  return <>{String(unknown)}</>;
+}
+
+function renderEvidence(evidence: unknown): string | null {
+  if (evidence === undefined || evidence === null) return null;
+  if (typeof evidence === "string") return evidence;
+  if (Array.isArray(evidence)) {
+    return evidence
+      .map((entry) =>
+        typeof entry === "object" && entry !== null
+          ? JSON.stringify(entry)
+          : String(entry),
+      )
+      .join(" · ");
+  }
+  if (typeof evidence === "object") return JSON.stringify(evidence);
+  return String(evidence);
+}
+
 export function AiReport({ report }: { report: unknown }): React.JSX.Element {
   const normalized = asReport(report);
   if (normalized === null) return <Empty description="No AI report." />;
@@ -68,19 +125,35 @@ export function AiReport({ report }: { report: unknown }): React.JSX.Element {
         ) : (
           <List
             dataSource={recommendations}
-            renderItem={(recommendation) => (
-              <List.Item>
-                <List.Item.Meta
-                  title={
-                    <span>
-                      {String(recommendation.recommendation)}{" "}
-                      <Tag>{String(recommendation.priority)}</Tag>
-                    </span>
-                  }
-                  description={String(recommendation.justification ?? "")}
-                />
-              </List.Item>
-            )}
+            renderItem={(recommendation) => {
+              const evidence = renderEvidence(recommendation.evidence);
+              return (
+                <List.Item>
+                  <List.Item.Meta
+                    title={
+                      <span>
+                        {String(recommendation.recommendation)}{" "}
+                        <Tag>{String(recommendation.priority)}</Tag>
+                        <Tag>{String(recommendation.dimension)}</Tag>
+                      </span>
+                    }
+                    description={
+                      <span>
+                        {String(recommendation.justification ?? "")}
+                        {evidence !== null && evidence.length > 0 && (
+                          <>
+                            <br />
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              Evidence: {evidence}
+                            </Typography.Text>
+                          </>
+                        )}
+                      </span>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
           />
         )}
       </Card>
@@ -88,11 +161,9 @@ export function AiReport({ report }: { report: unknown }): React.JSX.Element {
         <Card title={`Unknowns (${unknowns.length})`}>
           <List
             dataSource={unknowns}
-            renderItem={(unknown) => (
-              <List.Item>
-                <Typography.Text code style={{ whiteSpace: "pre-wrap" }}>
-                  {typeof unknown === "string" ? unknown : JSON.stringify(unknown, null, 2)}
-                </Typography.Text>
+            renderItem={(unknown, index) => (
+              <List.Item key={index}>
+                {renderUnknown(unknown)}
               </List.Item>
             )}
           />

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { z } from "zod";
 
 import type { AppConfig } from "../../config/env.js";
 import { AppError, NotFoundError } from "../../shared/errors.js";
@@ -9,11 +10,14 @@ import {
   type BuiltAnalysisContext,
 } from "../ai/context-builder.js";
 import { InseaWorkflowClient } from "../ai/insea.client.js";
+import { buildFollowupPrompt } from "../ai/prompt.builder.js";
 import { normalizeAiReport } from "../ai/report-normalizer.js";
 import type {
   AnalysisRun,
   AiStatus,
+  AnalysisLens,
   Finding,
+  RunExchange,
 } from "./analysis-run.entity.js";
 import { compareGitRevisions } from "../git/git-comparison.js";
 import { materializeGitRevision } from "../git/snapshot.store.js";
@@ -32,7 +36,74 @@ export interface CreateAnalysisInput {
   baseRef: string;
   currentRef: string;
   goal: string;
+  lens?: AnalysisLens;
 }
+
+export interface AskQuestionInput {
+  analysisRunId: string;
+  question: string;
+}
+
+const followupAnswerSchema = z.object({
+  answer: z.string().trim().min(1).max(8000),
+  citations: z.array(z.string().trim().min(1).max(1024)).optional().default([]),
+});
+
+const importedRunSchema = z
+  .object({
+    kind: z.enum(["analysis", "comparison"]).optional().default("analysis"),
+    localPath: z.string().trim().min(1).max(1024),
+    baseRef: z.string().trim().min(1).max(255),
+    currentRef: z.string().trim().min(1).max(255),
+    goal: z.string().trim().min(1).max(4000),
+    status: z.enum(["completed", "failed"]).optional().default("completed"),
+    projectSummary: z
+      .object({
+        configFiles: z.number(),
+        sourceFiles: z.number(),
+        otherTextFiles: z.number(),
+      })
+      .optional(),
+    comparison: z
+      .object({
+        baseCommit: z.string(),
+        currentCommit: z.string(),
+        currentIsWorktree: z.boolean(),
+        changedFiles: z
+          .array(
+            z.object({
+              changeType: z.enum(["added", "modified", "deleted", "renamed", "untracked"]),
+              relativePath: z.string(),
+              previousPath: z.string().optional(),
+            }),
+          )
+          .optional()
+          .default([]),
+        unifiedDiff: z.string().optional(),
+        diffTruncated: z.boolean().optional(),
+      })
+      .optional(),
+    findings: z
+      .array(
+        z.object({
+          code: z.string(),
+          severity: z.enum(["error", "warning", "info"]),
+          message: z.string(),
+          filePath: z.string(),
+          line: z.number().optional(),
+          evidence: z.record(z.string(), z.unknown()).optional(),
+        }),
+      )
+      .optional()
+      .default([]),
+    aiReport: z.record(z.string(), z.unknown()).optional(),
+    aiStatus: z.enum(["not_configured", "completed", "failed", "skipped"]).optional(),
+    error: z.string().optional(),
+    lens: z
+      .enum(["pre_merge", "balance", "economy", "localization", "explain", "test_plan"])
+      .optional(),
+  })
+  .catchall(z.unknown());
 
 export interface CompareAnalysesInput {
   analysisRunAId: string;
@@ -60,6 +131,7 @@ export class AnalysisService {
       status: "queued",
       createdAt: new Date().toISOString(),
       findings: [],
+      lens: input.lens ?? "pre_merge",
     };
     await this.repository.save(run);
     this.queue.enqueue(`analysis:${run.id}`, () => this.executeAnalysis(run.id));
@@ -118,6 +190,129 @@ export class AnalysisService {
     return this.queue.getPendingCount();
   }
 
+  async askQuestion(input: AskQuestionInput): Promise<RunExchange> {
+    const run = await this.repository.findById(input.analysisRunId);
+    if (run === null) {
+      throw new NotFoundError("ANALYSIS_RUN_NOT_FOUND", "Analysis run was not found.");
+    }
+    if (run.status !== "completed") {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        400,
+        "Questions are available once the run completes.",
+      );
+    }
+    if (this.aiClient === null || this.config.ai.configured === false) {
+      throw new AppError(
+        "AI_NOT_CONFIGURED",
+        400,
+        "AI workflow is not configured; deterministic results only.",
+      );
+    }
+    const history = await this.repository.listExchanges(run.id);
+    const report = (run.aiReport ?? {}) as Record<string, unknown>;
+    const summary = (report.summary ?? {}) as Record<string, unknown>;
+    const prompt = buildFollowupPrompt({
+      goal: run.goal,
+      lens: run.lens,
+      question: input.question,
+      history: history.map((exchange) => ({
+        question: exchange.question,
+        answer: exchange.answer,
+      })),
+      digest: {
+        baseRef: run.baseRef,
+        currentRef: run.currentRef,
+        changedFiles: (run.comparison?.changedFiles ?? []).map((file) => ({
+          relativePath: file.relativePath,
+          changeType: file.changeType,
+        })),
+        findingCount: run.findings.length,
+        deterministicFindings: run.findings.slice(0, 40).map((finding) => ({
+          code: finding.code,
+          severity: finding.severity,
+          message: finding.message,
+          filePath: finding.filePath,
+          line: finding.line,
+        })),
+        aiAssessment:
+          typeof summary.overall_assessment === "string"
+            ? summary.overall_assessment
+            : "No AI assessment.",
+      },
+    });
+    let raw: Record<string, unknown>;
+    try {
+      raw = await this.aiClient.run({
+        prompt,
+        manifest: {
+          schema_version: "1.0",
+          request_id: randomUUID(),
+          analysis_id: run.id,
+          stage: "followup_qa",
+          lens: run.lens ?? "pre_merge",
+          question: input.question,
+        },
+        files: [],
+        requestId: randomUUID(),
+      });
+    } catch (error) {
+      getLogger().warn({ err: error }, "AI question failed");
+      throw new AppError(
+        "AI_REQUEST_FAILED",
+        502,
+        "The AI workflow did not answer the question.",
+      );
+    }
+    const parsed = followupAnswerSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new AppError(
+        "AI_PROTOCOL_ERROR",
+        502,
+        "The AI answer was not valid follow-up JSON.",
+      );
+    }
+    const exchange: RunExchange = {
+      id: randomUUID(),
+      question: input.question,
+      answer: parsed.data.answer,
+      citations: parsed.data.citations.slice(0, 20),
+      createdAt: new Date().toISOString(),
+    };
+    await this.repository.appendExchange(run.id, exchange);
+    return exchange;
+  }
+
+  async listExchanges(analysisRunId: string): Promise<RunExchange[]> {
+    const run = await this.repository.findById(analysisRunId);
+    if (run === null) {
+      throw new NotFoundError("ANALYSIS_RUN_NOT_FOUND", "Analysis run was not found.");
+    }
+    return this.repository.listExchanges(analysisRunId);
+  }
+
+  async importRun(raw: Record<string, unknown>): Promise<AnalysisRun> {
+    const parsed = importedRunSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        400,
+        "Imported run JSON is not a valid analysis run.",
+      );
+    }
+    const run: AnalysisRun = {
+      ...parsed.data,
+      id: randomUUID(),
+      status: parsed.data.status === "completed" ? "completed" : "failed",
+      createdAt: new Date().toISOString(),
+      exchanges: [],
+    };
+    await this.repository.save(run);
+    const stored = await this.repository.findById(run.id);
+    if (stored === null) throw new AppError("PERSISTENCE_ERROR", 500, "Import failed.");
+    return stored;
+  }
+
   private async executeAnalysis(runId: string): Promise<void> {
     const stored = await this.repository.findById(runId);
     if (stored === null || stored.status !== "queued") return;
@@ -165,6 +360,7 @@ export class AnalysisService {
         const { aiReport, aiStatus } = await this.runAiStage({
           analysisId: stored.id,
           goal: stored.goal,
+          lens: stored.lens,
           baseRef: stored.baseRef,
           currentRef: stored.currentRef,
           baseInspection,
@@ -183,6 +379,8 @@ export class AnalysisService {
             currentCommit: comparison.currentCommit,
             currentIsWorktree: comparison.currentIsWorktree,
             changedFiles: comparison.changedFiles,
+            unifiedDiff: comparison.unifiedDiff,
+            diffTruncated: comparison.diffTruncated,
           },
           findings: deterministicFindings,
           aiReport,
@@ -284,6 +482,7 @@ export class AnalysisService {
   private async runAiStage(context: {
     analysisId: string;
     goal: string;
+    lens?: AnalysisLens;
     baseRef: string;
     currentRef: string;
     baseInspection: Parameters<typeof buildAnalysisContext>[0]["baseInspection"];
@@ -299,6 +498,7 @@ export class AnalysisService {
         analysisId: context.analysisId,
         requestId: randomUUID(),
         goal: context.goal,
+        lens: context.lens,
         baseRef: context.baseRef,
         currentRef: context.currentRef,
         baseInspection: context.baseInspection,

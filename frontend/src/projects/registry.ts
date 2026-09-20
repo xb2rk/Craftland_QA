@@ -6,6 +6,7 @@ export interface SavedProject {
   lastGoal?: string;
   lastBaseRef?: string;
   lastCurrentRef?: string;
+  lastLens?: string;
 }
 
 const PROJECTS_KEY = "cqa.projects.v1";

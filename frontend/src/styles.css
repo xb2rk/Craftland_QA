@@ -12,3 +12,29 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+/* Dark evidence islands: diffs, raw JSON, code evidence. */
+.dark-panel {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dark-panel .diff-add {
+  color: #86efac;
+}
+
+.dark-panel .diff-del {
+  color: #fca5a5;
+}
+
+.dark-panel .diff-hunk {
+  color: #93c5fd;
+}

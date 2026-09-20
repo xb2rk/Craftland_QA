@@ -21,10 +21,11 @@ import {
   useInspectQuery,
   useStartAnalysisMutation,
 } from "../api/hooks.js";
-import { ApiError, type NormalizedAiReport } from "../api/types.js";
+import { ApiError, type AnalysisLens, type NormalizedAiReport } from "../api/types.js";
 import { useProjects } from "../app/project-context.js";
 import { FolderBrowser } from "../components/FolderBrowser.js";
 import { GoalField } from "../components/GoalField.js";
+import { LensPicker } from "../components/LensPicker.js";
 import { RefPicker } from "../components/RefPicker.js";
 import { riskColor } from "../components/system-map.js";
 import { newProjectId, projectNameFromPath } from "../projects/registry.js";
@@ -46,6 +47,9 @@ export function AnalyzePage(): React.JSX.Element {
   const [goal, setGoal] = useState(active?.lastGoal ?? "");
   const [baseRef, setBaseRef] = useState(active?.lastBaseRef ?? "HEAD~1");
   const [currentRef, setCurrentRef] = useState(active?.lastCurrentRef ?? "WORKTREE");
+  const [lens, setLens] = useState<AnalysisLens>(
+    (active?.lastLens as AnalysisLens | undefined) ?? "pre_merge",
+  );
   const [addError, setAddError] = useState<string | null>(null);
 
   const selected = projects.find((project) => project.id === selectedId) ?? null;
@@ -64,6 +68,7 @@ export function AnalyzePage(): React.JSX.Element {
     setGoal(project?.lastGoal ?? "");
     setBaseRef(project?.lastBaseRef ?? "HEAD~1");
     setCurrentRef(project?.lastCurrentRef ?? "WORKTREE");
+    setLens((project?.lastLens as AnalysisLens | undefined) ?? "pre_merge");
     setAddError(null);
   };
 
@@ -82,6 +87,7 @@ export function AnalyzePage(): React.JSX.Element {
         setGoal("");
         setBaseRef("HEAD~1");
         setCurrentRef("WORKTREE");
+        setLens("pre_merge");
         setBrowserOpen(false);
       },
       onError: (error) => {
@@ -109,6 +115,7 @@ export function AnalyzePage(): React.JSX.Element {
   return (
     <div>
       <GoalField value={goal} onChange={setGoal} />
+      <LensPicker value={lens} onChange={setLens} />
 
       <Typography.Title level={4} style={{ marginTop: 20, marginBottom: 4 }}>
         Which project?
@@ -232,6 +239,7 @@ export function AnalyzePage(): React.JSX.Element {
                       baseRef,
                       currentRef,
                       goal: goal.trim(),
+                      lens,
                     },
                     {
                       onSuccess: (run) => {
@@ -239,6 +247,7 @@ export function AnalyzePage(): React.JSX.Element {
                           lastGoal: goal.trim(),
                           lastBaseRef: baseRef,
                           lastCurrentRef: currentRef,
+                          lastLens: lens,
                         });
                         navigate(`/runs/${run.id}`);
                       },

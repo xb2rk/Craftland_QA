@@ -74,8 +74,9 @@ export class InseaWorkflowClient {
         });
       }
       if (!response.ok) {
+        const body = await response.text().catch(() => "");
         throw new AIProtocolError(
-          `Insea request failed with status ${response.status}.`,
+          `Insea request failed with status ${response.status}: ${body.slice(0, 500)}`,
         );
       }
       const data: unknown = await response.json();

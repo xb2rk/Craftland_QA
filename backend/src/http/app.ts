@@ -7,9 +7,11 @@ import { errorHandler, notFoundHandler } from "./middlewares/error.js";
 import { asyncRoute } from "../shared/async-handler.js";
 import { NotFoundError } from "../shared/errors.js";
 import {
+  askQuestionBodySchema,
   browseProjectsQuerySchema,
   compareAnalysesBodySchema,
   createAnalysisBodySchema,
+  importRunBodySchema,
   inspectProjectBodySchema,
   listAnalysesQuerySchema,
   projectRefsQuerySchema,
@@ -139,6 +141,36 @@ export function createApp(deps: AppDependencies): express.Express {
     }),
   );
 
+  app.post(
+    "/api/analysis-runs/:id/questions",
+    asyncRoute(async (req, res) => {
+      const body = askQuestionBodySchema.parse(req.body);
+      const exchange = await deps.analysisService.askQuestion({
+        analysisRunId: req.params.id as string,
+        question: body.question,
+      });
+      res.status(201).json(exchange);
+    }),
+  );
+
+  app.get(
+    "/api/analysis-runs/:id/questions",
+    asyncRoute(async (req, res) => {
+      res.json(await deps.analysisService.listExchanges(req.params.id as string));
+    }),
+  );
+
+  app.post(
+    "/api/analysis-runs/import",
+    asyncRoute(async (req, res) => {
+      const body = importRunBodySchema.parse(req.body);
+      const run = await deps.analysisService.importRun(
+        body.run as Record<string, unknown>,
+      );
+      res.status(201).json(run);
+    }),
+  );
+
   app.get("/openapi.json", (_req, res) => {
     res.json(buildOpenApiDocument());
   });
@@ -169,6 +201,13 @@ function buildOpenApiDocument(): Record<string, unknown> {
         post: { summary: "Compare two completed analysis runs" },
       },
       "/api/analysis-runs/{id}": { get: { summary: "Get an analysis run" } },
+      "/api/analysis-runs/{id}/questions": {
+        post: { summary: "Ask a follow-up question about a completed run" },
+        get: { summary: "List follow-up questions for a run" },
+      },
+      "/api/analysis-runs/import": {
+        post: { summary: "Import an analysis run from exported JSON" },
+      },
     },
   };
 }

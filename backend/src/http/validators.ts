@@ -4,11 +4,29 @@ export const inspectProjectBodySchema = z.object({
   localPath: z.string().trim().min(1).max(1024),
 });
 
+export const analysisLensSchema = z.enum([
+  "pre_merge",
+  "balance",
+  "economy",
+  "localization",
+  "explain",
+  "test_plan",
+]);
+
 export const createAnalysisBodySchema = z.object({
   localPath: z.string().trim().min(1).max(1024),
   baseRef: z.string().trim().min(1).max(255).default("HEAD~1"),
   currentRef: z.string().trim().min(1).max(255).default("WORKTREE"),
   goal: z.string().trim().min(1).max(4000),
+  lens: analysisLensSchema.default("pre_merge"),
+});
+
+export const askQuestionBodySchema = z.object({
+  question: z.string().trim().min(1).max(2000),
+});
+
+export const importRunBodySchema = z.object({
+  run: z.record(z.string(), z.unknown()),
 });
 
 export const compareAnalysesBodySchema = z.object({

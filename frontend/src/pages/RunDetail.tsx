@@ -1,14 +1,21 @@
-import { Alert, Card, Skeleton, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, Button, Card, Skeleton, Table, Tabs, Tag, Typography } from "antd";
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { useAnalysis } from "../api/hooks.js";
+import { useAnalysis, useHealth } from "../api/hooks.js";
 import { AiReport } from "../components/AiReport.js";
+import { DiffViewer } from "../components/DiffViewer.js";
+import { FixChecklist } from "../components/FixChecklist.js";
+import { QuestionDrawer } from "../components/QuestionDrawer.js";
 import { SystemFindings } from "../components/SystemFindings.js";
 import { Verdict } from "../components/Verdict.js";
+import { exportRunJson } from "../components/run-io.js";
 
 export function RunDetailPage(): React.JSX.Element {
   const { id } = useParams();
   const analysis = useAnalysis(id);
+  const health = useHealth();
+  const [questionsOpen, setQuestionsOpen] = useState(false);
 
   if (analysis.isLoading) return <Skeleton active />;
   if (analysis.error instanceof Error) {
@@ -26,7 +33,16 @@ export function RunDetailPage(): React.JSX.Element {
         extra={
           <span style={{ display: "flex", gap: 8 }}>
             {run.kind === "comparison" && <Tag color="purple">comparison</Tag>}
+            {run.lens && run.lens !== "pre_merge" && (
+              <Tag color="blue">{run.lens.replace(/_/g, " ")}</Tag>
+            )}
             <Tag>{run.status}</Tag>
+            <Button size="small" onClick={() => setQuestionsOpen(true)}>
+              Ask about this change
+            </Button>
+            <Button size="small" onClick={() => exportRunJson(run)}>
+              Export JSON
+            </Button>
           </span>
         }
       >
@@ -70,6 +86,11 @@ export function RunDetailPage(): React.JSX.Element {
                     <AiReport report={run.aiReport} />
                   </div>
                 )}
+                {!pending && (
+                  <div style={{ marginTop: 12 }}>
+                    <FixChecklist run={run} />
+                  </div>
+                )}
               </div>
             ),
           },
@@ -84,6 +105,16 @@ export function RunDetailPage(): React.JSX.Element {
               />
             ) : (
               <SystemFindings findings={run.findings} />
+            ),
+          },
+          {
+            key: "diff",
+            label: "Diff",
+            children: (
+              <DiffViewer
+                diff={run.comparison?.unifiedDiff}
+                truncated={run.comparison?.diffTruncated}
+              />
             ),
           },
           {
@@ -110,12 +141,19 @@ export function RunDetailPage(): React.JSX.Element {
             key: "raw",
             label: "Raw JSON",
             children: (
-              <Typography.Text code style={{ whiteSpace: "pre-wrap" }}>
+              <div className="dark-panel">
                 {JSON.stringify(run, null, 2)}
-              </Typography.Text>
+              </div>
             ),
           },
         ]}
+      />
+
+      <QuestionDrawer
+        runId={run.id}
+        open={questionsOpen}
+        aiConfigured={health.data?.ai.configured === true}
+        onClose={() => setQuestionsOpen(false)}
       />
     </div>
   );

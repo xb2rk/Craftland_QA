@@ -17,7 +17,16 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ConfigProvider theme={{ token: { borderRadius: 8 } }}>
+    <ConfigProvider
+      theme={{
+        token: {
+          borderRadius: 10,
+          colorPrimary: "#4f46e5",
+          colorBgLayout: "#f1f5f9",
+          fontSize: 14,
+        },
+      }}
+    >
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>

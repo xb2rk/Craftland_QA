@@ -2,6 +2,30 @@ export type AnalysisStatus = "queued" | "running" | "completed" | "failed";
 export type AnalysisKind = "analysis" | "comparison";
 export type AiStatus = "not_configured" | "completed" | "failed" | "skipped";
 export type FindingSeverity = "error" | "warning" | "info";
+export type AnalysisLens =
+  | "pre_merge"
+  | "balance"
+  | "economy"
+  | "localization"
+  | "explain"
+  | "test_plan";
+
+export const ANALYSIS_LENSES: Array<{ value: AnalysisLens; label: string; hint: string }> = [
+  { value: "pre_merge", label: "Pre-merge risk check", hint: "Ship / don't-ship verdict with verification list." },
+  { value: "balance", label: "Balance review", hint: "Difficulty curve, outliers, unfair spikes." },
+  { value: "economy", label: "Economy audit", hint: "Prices, rewards, progression pacing." },
+  { value: "localization", label: "Localization QA", hint: "Row widths, keys, references across CSVs." },
+  { value: "explain", label: "Explain this change", hint: "Plain designer language, no jargon." },
+  { value: "test_plan", label: "Test plan", hint: "QA checklist derived from the diff." },
+];
+
+export interface RunExchange {
+  id: string;
+  question: string;
+  answer: string;
+  citations: string[];
+  createdAt: string;
+}
 
 export interface ChangedFileRef {
   changeType: "added" | "modified" | "deleted" | "renamed" | "untracked";
@@ -39,11 +63,15 @@ export interface AnalysisRun {
     currentCommit: string;
     currentIsWorktree: boolean;
     changedFiles: ChangedFileRef[];
+    unifiedDiff?: string;
+    diffTruncated?: boolean;
   };
   findings: Finding[];
   aiReport?: NormalizedAiReport | Record<string, unknown>;
   aiStatus?: AiStatus;
   error?: string;
+  lens?: AnalysisLens;
+  exchanges?: RunExchange[];
 }
 
 export interface NormalizedAiReport {

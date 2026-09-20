@@ -1,11 +1,13 @@
 import {
   ApiError,
+  type AnalysisLens,
   type AnalysisRun,
   type BrowseResult,
   type Health,
   type ProjectBranch,
   type ProjectCommit,
   type ProjectInspection,
+  type RunExchange,
 } from "./types.js";
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
@@ -69,6 +71,7 @@ export const api = {
     baseRef: string;
     currentRef: string;
     goal: string;
+    lens?: AnalysisLens;
   }): Promise<AnalysisRun> {
     return requestJson<AnalysisRun>("/api/analysis-runs", {
       method: "POST",
@@ -95,5 +98,23 @@ export const api = {
       `/api/analysis-runs/${encodeURIComponent(id)}`,
       { method: "GET" },
     );
+  },
+  askQuestion(id: string, question: string): Promise<RunExchange> {
+    return requestJson<RunExchange>(
+      `/api/analysis-runs/${encodeURIComponent(id)}/questions`,
+      { method: "POST", body: JSON.stringify({ question }) },
+    );
+  },
+  listQuestions(id: string): Promise<RunExchange[]> {
+    return requestJson<RunExchange[]>(
+      `/api/analysis-runs/${encodeURIComponent(id)}/questions`,
+      { method: "GET" },
+    );
+  },
+  importRun(run: Record<string, unknown>): Promise<AnalysisRun> {
+    return requestJson<AnalysisRun>("/api/analysis-runs/import", {
+      method: "POST",
+      body: JSON.stringify({ run }),
+    });
   },
 };

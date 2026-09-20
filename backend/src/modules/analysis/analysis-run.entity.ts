@@ -13,6 +13,22 @@ export type AnalysisRunStatus = "queued" | "running" | "completed" | "failed";
 export type AnalysisRunKind = "analysis" | "comparison";
 export type AiStatus = "not_configured" | "completed" | "failed" | "skipped";
 
+export type AnalysisLens =
+  | "pre_merge"
+  | "balance"
+  | "economy"
+  | "localization"
+  | "explain"
+  | "test_plan";
+
+export interface RunExchange {
+  id: string;
+  question: string;
+  answer: string;
+  citations: string[];
+  createdAt: string;
+}
+
 export interface ChangedFileRef {
   changeType: "added" | "modified" | "deleted" | "renamed" | "untracked";
   relativePath: string;
@@ -40,9 +56,13 @@ export interface AnalysisRun {
     currentCommit: string;
     currentIsWorktree: boolean;
     changedFiles: ChangedFileRef[];
+    unifiedDiff?: string;
+    diffTruncated?: boolean;
   };
   findings: Finding[];
   aiReport?: Record<string, unknown>;
   aiStatus?: AiStatus;
   error?: string;
+  lens?: AnalysisLens;
+  exchanges?: RunExchange[];
 }

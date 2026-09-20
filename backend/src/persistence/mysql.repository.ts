@@ -5,7 +5,7 @@ import type {
   RowDataPacket,
 } from "mysql2/promise";
 
-import type { AnalysisRun } from "../modules/analysis/analysis-run.entity.js";
+import type { AnalysisRun, RunExchange } from "../modules/analysis/analysis-run.entity.js";
 import type { AnalysisRunRepository } from "./repository.js";
 
 interface AnalysisRunRow extends RowDataPacket {
@@ -16,6 +16,7 @@ interface AnalysisRunRow extends RowDataPacket {
   base_ref: string;
   current_ref: string;
   goal: string;
+  lens: AnalysisRun["lens"] | null;
   status: AnalysisRun["status"];
   project_summary_json: string | Record<string, unknown> | null;
   comparison_json: string | Record<string, unknown> | null;
@@ -34,6 +35,15 @@ interface FindingRow extends RowDataPacket {
   file_path: string;
   line_number: number | null;
   evidence_json: string | Record<string, unknown> | null;
+}
+
+interface ExchangeRow extends RowDataPacket {
+  id: string;
+  analysis_run_id: string;
+  question: string;
+  answer: string;
+  citations_json: string | string[] | null;
+  created_at: Date;
 }
 
 export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
@@ -105,12 +115,46 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
     return result.affectedRows;
   }
 
+  async appendExchange(runId: string, exchange: RunExchange): Promise<RunExchange[]> {
+    await this.pool.execute(
+      `INSERT INTO run_exchanges (id, analysis_run_id, question, answer, citations_json)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        exchange.id,
+        runId,
+        exchange.question,
+        exchange.answer,
+        JSON.stringify(exchange.citations),
+      ],
+    );
+    return this.listExchanges(runId);
+  }
+
+  async listExchanges(runId: string): Promise<RunExchange[]> {
+    const [rows] = await this.pool.query<ExchangeRow[]>(
+      "SELECT * FROM run_exchanges WHERE analysis_run_id = ? ORDER BY created_at",
+      [runId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      question: row.question,
+      answer: row.answer,
+      citations:
+        row.citations_json === null
+          ? []
+          : typeof row.citations_json === "string"
+            ? (JSON.parse(row.citations_json) as string[])
+            : row.citations_json,
+      createdAt: row.created_at.toISOString(),
+    }));
+  }
+
   private async upsertRun(connection: PoolConnection, run: AnalysisRun): Promise<void> {
     await connection.execute<ResultSetHeader>(
       `INSERT INTO analysis_runs
-        (id, kind, comparison_source_ids, local_path, base_ref, current_ref, goal, status,
+        (id, kind, comparison_source_ids, local_path, base_ref, current_ref, goal, lens, status,
          project_summary_json, comparison_json, ai_report_json, ai_status, error_message, created_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          status = VALUES(status),
          project_summary_json = VALUES(project_summary_json),
@@ -129,6 +173,7 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
         run.baseRef,
         run.currentRef,
         run.goal,
+        run.lens ?? null,
         run.status,
         run.projectSummary === undefined ? null : JSON.stringify(run.projectSummary),
         run.comparison === undefined ? null : JSON.stringify(run.comparison),
@@ -171,6 +216,7 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
       currentRef: row.current_ref,
       goal: row.goal,
       status: row.status,
+      lens: row.lens ?? undefined,
       createdAt: row.created_at.toISOString(),
       completedAt: row.completed_at?.toISOString(),
       projectSummary: parseJsonColumn<AnalysisRun["projectSummary"]>(
