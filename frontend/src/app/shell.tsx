@@ -1,33 +1,77 @@
-import {
-  BranchesOutlined,
-  DashboardOutlined,
-  FileSearchOutlined,
-  SettingOutlined,
-  SwapOutlined,
-} from "@ant-design/icons";
-import { Alert, Badge, Layout, Menu, Typography } from "antd";
+import { DashboardOutlined, HistoryOutlined } from "@ant-design/icons";
+import { Alert, Badge, Dropdown, Layout, Menu, Select, Typography } from "antd";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 
 import { useHealth } from "../api/hooks.js";
+import { ProjectProvider, useProjects } from "./project-context.js";
 
 const { Content, Header, Sider } = Layout;
 
 const MENU_ITEMS = [
-  { key: "/", icon: <DashboardOutlined />, label: <Link to="/">Overview</Link> },
-  { key: "/projects", icon: <FileSearchOutlined />, label: <Link to="/projects">Projects</Link> },
-  { key: "/analyses", icon: <BranchesOutlined />, label: <Link to="/analyses">Analyses</Link> },
-  { key: "/compare", icon: <SwapOutlined />, label: <Link to="/compare">Compare</Link> },
-  { key: "/settings", icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
+  { key: "/", icon: <DashboardOutlined />, label: <Link to="/">Analyze</Link> },
+  { key: "/runs", icon: <HistoryOutlined />, label: <Link to="/runs">Runs</Link> },
 ];
 
 function selectedKey(pathname: string): string {
-  if (pathname.startsWith("/analyses")) return "/analyses";
-  const match = MENU_ITEMS.find((item) => item.key === pathname);
-  return match?.key ?? "/";
+  if (pathname.startsWith("/runs")) return "/runs";
+  return "/";
 }
 
-export function AppShell(): React.JSX.Element {
+function ProjectSwitcher(): React.JSX.Element {
+  const { projects, active, setActive } = useProjects();
+  if (projects.length === 0) {
+    return <Typography.Text type="secondary">No project yet</Typography.Text>;
+  }
+  return (
+    <Select
+      value={active?.id}
+      onChange={(id: string) => setActive(id)}
+      options={projects.map((project) => ({
+        value: project.id,
+        label: project.name,
+      }))}
+      style={{ minWidth: 180 }}
+    />
+  );
+}
+
+function BackendStatus(): React.JSX.Element {
+  const health = useHealth();
+  const items = [
+    {
+      key: "persistence",
+      label: `History: ${health.data?.persistence ?? "…"}`,
+      disabled: true,
+    },
+    {
+      key: "ai",
+      label: `AI: ${health.data?.ai.configured === true ? "connected" : "off"}`,
+      disabled: true,
+    },
+    {
+      key: "pending",
+      label: `Queued jobs: ${health.data?.pendingJobs ?? "…"}`,
+      disabled: true,
+    },
+  ];
+  return (
+    <Dropdown menu={{ items }} trigger={["click"]}>
+      <span style={{ cursor: "pointer" }}>
+        <Badge
+          status={health.data ? "success" : "default"}
+          text={health.data ? `Backend: ${health.data.persistence}` : "Backend: …"}
+        />{" "}
+        <Badge
+          status={health.data?.ai.configured === true ? "processing" : "default"}
+          text={health.data?.ai.configured === true ? "AI on" : "AI off"}
+        />
+      </span>
+    </Dropdown>
+  );
+}
+
+function ShellBody(): React.JSX.Element {
   const location = useLocation();
   const health = useHealth();
   const [collapsed, setCollapsed] = useState(false);
@@ -60,14 +104,10 @@ export function AppShell(): React.JSX.Element {
           }}
         >
           <Typography.Text strong>Craftland Quality Analyzer</Typography.Text>
-          <Badge
-            status={health.data ? "success" : "default"}
-            text={health.data ? `Backend: ${health.data.persistence}` : "Backend: …"}
-          />
-          <Badge
-            status={health.data?.ai.configured === true ? "processing" : "default"}
-            text={health.data?.ai.configured === true ? "AI on" : "AI off"}
-          />
+          <ProjectSwitcher />
+          <div style={{ marginLeft: "auto" }}>
+            <BackendStatus />
+          </div>
         </Header>
         <Content style={{ padding: 24, maxWidth: 1200, width: "100%", margin: "0 auto" }}>
           {ephemeral === true && (
@@ -82,5 +122,13 @@ export function AppShell(): React.JSX.Element {
         </Content>
       </Layout>
     </Layout>
+  );
+}
+
+export function AppShell(): React.JSX.Element {
+  return (
+    <ProjectProvider>
+      <ShellBody />
+    </ProjectProvider>
   );
 }

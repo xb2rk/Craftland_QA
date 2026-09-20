@@ -1,4 +1,12 @@
-import { ApiError, type AnalysisRun, type Health, type ProjectInspection } from "./types.js";
+import {
+  ApiError,
+  type AnalysisRun,
+  type BrowseResult,
+  type Health,
+  type ProjectBranch,
+  type ProjectCommit,
+  type ProjectInspection,
+} from "./types.js";
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -28,6 +36,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ localPath }),
     });
+  },
+  browse(path?: string): Promise<BrowseResult> {
+    const url =
+      path !== undefined && path.length > 0
+        ? `/api/projects/browse?path=${encodeURIComponent(path)}`
+        : "/api/projects/browse";
+    return requestJson<BrowseResult>(url, { method: "GET" });
+  },
+  branches(localPath: string): Promise<{ branches: ProjectBranch[] }> {
+    return requestJson<{ branches: ProjectBranch[] }>(
+      `/api/projects/branches?localPath=${encodeURIComponent(localPath)}`,
+      { method: "GET" },
+    );
+  },
+  commits(
+    localPath: string,
+    search?: string,
+    limit = 50,
+  ): Promise<{ commits: ProjectCommit[] }> {
+    const params = new URLSearchParams({ localPath, limit: String(limit) });
+    if (search !== undefined && search.trim().length > 0) {
+      params.set("search", search.trim());
+    }
+    return requestJson<{ commits: ProjectCommit[] }>(
+      `/api/projects/commits?${params.toString()}`,
+      { method: "GET" },
+    );
   },
   startAnalysis(input: {
     localPath: string;

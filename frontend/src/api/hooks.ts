@@ -6,7 +6,14 @@ import {
 } from "@tanstack/react-query";
 
 import { api } from "./client.js";
-import type { AnalysisRun, Health, ProjectInspection } from "./types.js";
+import type {
+  AnalysisRun,
+  BrowseResult,
+  Health,
+  ProjectBranch,
+  ProjectCommit,
+  ProjectInspection,
+} from "./types.js";
 
 export function useHealth(): UseQueryResult<Health> {
   return useQuery({ queryKey: ["health"], queryFn: api.health, staleTime: 15_000 });
@@ -52,6 +59,57 @@ export function useCompareMutation() {
   return useMutation({
     mutationFn: api.compare,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["analyses"] }),
+  });
+}
+
+export function useInspectQuery(localPath: string | undefined) {
+  return useQuery<ProjectInspection>({
+    queryKey: ["inspect", localPath],
+    queryFn: () => api.inspect(localPath!),
+    enabled: localPath !== undefined && localPath.length > 0,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+export function useBranches(localPath: string | undefined) {
+  return useQuery<{ branches: ProjectBranch[] }>({
+    queryKey: ["branches", localPath],
+    queryFn: () => api.branches(localPath!),
+    enabled: localPath !== undefined && localPath.length > 0,
+    staleTime: 30_000,
+  });
+}
+
+export function useCommitSearch(
+  localPath: string | undefined,
+  search: string,
+  enabled = true,
+) {
+  return useQuery<{ commits: ProjectCommit[] }>({
+    queryKey: ["commits", localPath, search],
+    queryFn: () =>
+      api.commits(
+        localPath!,
+        search.trim().length > 0 ? search.trim() : undefined,
+        50,
+      ),
+    enabled: enabled && localPath !== undefined && localPath.length > 0,
+    staleTime: 30_000,
+  });
+}
+
+export function useBrowse(currentPath: string | null | undefined) {
+  return useQuery<BrowseResult>({
+    queryKey: ["browse", currentPath ?? ""],
+    queryFn: () =>
+      api.browse(
+        currentPath === null || currentPath === undefined || currentPath === ""
+          ? undefined
+          : currentPath,
+      ),
+    staleTime: 10_000,
+    retry: 1,
   });
 }
 

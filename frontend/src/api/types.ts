@@ -110,6 +110,34 @@ export interface Health {
   pendingJobs: number;
 }
 
+export interface ProjectBranch {
+  name: string;
+  shortCommit: string;
+  upstream: string | null;
+  current: boolean;
+}
+
+export interface ProjectCommit {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  hasSubdirectories: boolean;
+  isRepository: boolean;
+}
+
+export interface BrowseResult {
+  currentPath: string;
+  parentPath: string | null;
+  entries: DirectoryEntry[];
+}
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
