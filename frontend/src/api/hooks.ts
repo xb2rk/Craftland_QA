@@ -101,6 +101,18 @@ export function useWhatIfMutation() {
   });
 }
 
+export function useWriterMutation() {
+  return useMutation({
+    mutationFn: api.draftWriter,
+  });
+}
+
+export function useLocalizationMutation() {
+  return useMutation({
+    mutationFn: api.runLocalization,
+  });
+}
+
 export function useInspectQuery(localPath: string | undefined) {
   return useQuery<ProjectInspection>({
     queryKey: ["inspect", localPath],

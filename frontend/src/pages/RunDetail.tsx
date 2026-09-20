@@ -12,7 +12,7 @@ import { SystemFindings } from "../components/SystemFindings.js";
 import { SectionCard } from "../components/ui/SectionCard.js";
 import { StatusDot } from "../components/ui/StatusDot.js";
 import { Verdict } from "../components/Verdict.js";
-import { exportDiffText, exportRunJson } from "../components/run-io.js";
+import { exportDiffText, exportIssuesMarkdown, exportRunJson } from "../components/run-io.js";
 import { runStatusTone } from "../theme/tokens.js";
 
 export function RunDetailPage(): React.JSX.Element {
@@ -97,6 +97,9 @@ export function RunDetailPage(): React.JSX.Element {
               onClick={() => exportDiffText(run)}
             >
               Export diff
+            </Button>
+            <Button size="small" disabled={run.findings.length === 0} onClick={() => exportIssuesMarkdown(run)}>
+              Export issues
             </Button>
           </span>
         }

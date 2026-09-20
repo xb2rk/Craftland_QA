@@ -79,3 +79,31 @@ export function exportDiffText(run: AnalysisRun): void {
 export function exportChecklistMarkdown(run: AnalysisRun, checked: string[]): void {
   downloadTextFile(`checklist-${run.id}.md`, checklistMarkdown(run, checked), "text/markdown");
 }
+
+export function issuesMarkdown(run: AnalysisRun): string {
+  const lines = [
+    `# Issues — ${run.goal}`,
+    ``,
+    `Run: ${run.id} · ${run.baseRef} → ${run.currentRef} · ${run.localPath}`,
+    ``,
+  ];
+  if (run.findings.length === 0) {
+    lines.push(`No deterministic findings — nothing to file.`);
+    return lines.join("\n");
+  }
+  for (const finding of run.findings) {
+    const location =
+      finding.line !== undefined ? `${finding.filePath}:${finding.line}` : finding.filePath;
+    lines.push(`## [${finding.severity}] ${finding.code}`);
+    lines.push(``);
+    lines.push(finding.message);
+    lines.push(``);
+    lines.push(`Location: \`${location}\``);
+    lines.push(``);
+  }
+  return lines.join("\n");
+}
+
+export function exportIssuesMarkdown(run: AnalysisRun): void {
+  downloadTextFile(`issues-${run.id}.md`, issuesMarkdown(run), "text/markdown");
+}

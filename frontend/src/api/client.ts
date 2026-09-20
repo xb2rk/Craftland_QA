@@ -4,6 +4,7 @@ import {
   type AnalysisRun,
   type BrowseResult,
   type Health,
+  type LocalizationCheckOutput,
   type ProjectBranch,
   type ProjectCommit,
   type ProjectDiffResult,
@@ -11,6 +12,8 @@ import {
   type RunExchange,
   type Verbosity,
   type WhatIfResult,
+  type WriterDraft,
+  type WriterKind,
 } from "./types.js";
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
@@ -105,6 +108,28 @@ export const api = {
     goal?: string;
   }): Promise<WhatIfResult> {
     return requestJson<WhatIfResult>("/api/projects/whatif", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  draftWriter(input: {
+    localPath: string;
+    baseRef: string;
+    currentRef: string;
+    kind: WriterKind;
+    goal?: string;
+  }): Promise<WriterDraft> {
+    return requestJson<WriterDraft>("/api/projects/write", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  runLocalization(input: {
+    localPath: string;
+    baseRef: string;
+    goal?: string;
+  }): Promise<LocalizationCheckOutput> {
+    return requestJson<LocalizationCheckOutput>("/api/projects/localization", {
       method: "POST",
       body: JSON.stringify(input),
     });

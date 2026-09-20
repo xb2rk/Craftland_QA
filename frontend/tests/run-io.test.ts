@@ -5,6 +5,7 @@ import {
   checklistItems,
   checklistMarkdown,
   checklistStorageKey,
+  issuesMarkdown,
   loadChecklist,
   saveChecklist,
 } from "../src/components/run-io.js";
@@ -56,5 +57,36 @@ describe("fix-it checklist", () => {
     saveChecklist("run-1", ["R001"]);
     expect(loadChecklist("run-1")).toEqual(["R001"]);
     expect(checklistStorageKey("run-1")).toBe("cqa.checklist.run-1");
+  });
+});
+
+describe("issues export", () => {
+  it("renders one markdown section per finding", () => {
+    const markdown = issuesMarkdown({
+      ...runWithRecommendations(),
+      findings: [
+        {
+          code: "LOC_EMPTY_VALUE",
+          severity: "warning",
+          message: "Empty value for key WELCOME.",
+          filePath: "Assets/Localization/key.csv",
+          line: 12,
+        },
+        {
+          code: "CONFIG_CSV_WIDTH_MISMATCH",
+          severity: "error",
+          message: "Row 700 has 15 columns, expected 17.",
+          filePath: "Assets/Localization/key.csv",
+        },
+      ],
+    });
+    expect(markdown).toContain("# Issues — Verify mission changes");
+    expect(markdown).toContain("## [warning] LOC_EMPTY_VALUE");
+    expect(markdown).toContain("`Assets/Localization/key.csv:12`");
+    expect(markdown).toContain("## [error] CONFIG_CSV_WIDTH_MISMATCH");
+  });
+
+  it("renders an empty state when there are no findings", () => {
+    expect(issuesMarkdown(runWithRecommendations())).toContain("No deterministic findings");
   });
 });

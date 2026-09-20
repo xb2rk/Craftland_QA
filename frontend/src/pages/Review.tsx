@@ -1,19 +1,4 @@
-import {
-  Alert,
-  App,
-  Button,
-  Col,
-  Empty,
-  Input,
-  Row,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, App, Button, Empty, Skeleton, Table, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -26,13 +11,13 @@ import {
 import { ApiError, type AnalysisLens, type Verbosity } from "../api/types.js";
 import { useProjects } from "../app/project-context.js";
 import { DiffViewer } from "../components/DiffViewer.js";
-import { GoalField, type ExtraTemplate } from "../components/GoalField.js";
-import { LensPicker } from "../components/LensPicker.js";
-import { RefPicker } from "../components/RefPicker.js";
-import { SectionCard } from "../components/ui/SectionCard.js";
-import { StatTile } from "../components/ui/StatTile.js";
-import { VerbosityPicker } from "../components/VerbosityPicker.js";
+import { type ExtraTemplate } from "../components/GoalField.js";
 import { WhatIfThread } from "../components/WhatIfThread.js";
+import { AiReviewPanel } from "../components/review/AiReviewPanel.js";
+import { CompareCard } from "../components/review/CompareCard.js";
+import { LocalizationPanel } from "../components/review/LocalizationPanel.js";
+import { WritersPanel } from "../components/review/WritersPanel.js";
+import { SectionCard } from "../components/ui/SectionCard.js";
 import { newProjectId } from "../projects/registry.js";
 import { loadSettings } from "../settings/store.js";
 
@@ -72,7 +57,12 @@ export function ReviewPage(): React.JSX.Element {
   const [focusPaths, setFocusPaths] = useState<string[]>([]);
   const [presetLabel, setPresetLabel] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState(searchParams.get("tab") === "whatif" ? "whatif" : "ai");
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState(
+    initialTab === "whatif" || initialTab === "writers" || initialTab === "localization"
+      ? initialTab
+      : "ai",
+  );
   const { message } = App.useApp();
 
   const copyPath = (value: string): void => {
@@ -125,7 +115,12 @@ export function ReviewPage(): React.JSX.Element {
     projectDiff.variables?.currentRef === currentRef;
   const diffError = projectDiff.error;
   const startError = startAnalysis.error;
-  const changedFiles = diffFresh && projectDiff.data ? projectDiff.data.changedFiles : [];
+  // Stale-while-refresh: keep the previous pair's files on screen while the
+  // new diff loads, so ref changes never collapse the layout into skeletons.
+  const changedFiles =
+    projectDiff.data !== undefined && projectDiff.variables?.localPath === localPath
+      ? projectDiff.data.changedFiles
+      : [];
 
   const diffStats = useMemo(() => {
     const counts = { added: 0, modified: 0, deleted: 0, renamed: 0, untracked: 0 };
@@ -223,7 +218,9 @@ export function ReviewPage(): React.JSX.Element {
         </div>
       </SectionCard>
 
-      {inspection.isLoading && <Skeleton active />}
+      {inspection.isLoading && !inspection.data && (
+        <Skeleton active paragraph={{ rows: 2 }} style={{ marginBottom: 16 }} />
+      )}
       {inspection.error instanceof ApiError && (
         <Alert
           type="error"
@@ -233,160 +230,49 @@ export function ReviewPage(): React.JSX.Element {
         />
       )}
 
-      <SectionCard
-        title="Compare versions"
-        description="Pick the two revisions under review — diff, files, AI, and what-if all follow this pair."
-        extra={
-          <Space size={8} wrap>
-            {projectDiff.isPending ? (
-              <Tag color="blue">Loading diff…</Tag>
-            ) : diffError instanceof ApiError ? (
-              <Tag color="red">Diff error</Tag>
-            ) : diffFresh ? (
-              <Tag color="green">
-                Diff live · {changedFiles.length} file{changedFiles.length === 1 ? "" : "s"}
-              </Tag>
-            ) : (
-              <Tag>Refreshing diff…</Tag>
-            )}
-          </Space>
+      <CompareCard
+        localPath={active.localPath}
+        baseRef={baseRef}
+        currentRef={currentRef}
+        onBaseChange={(value) => setBaseRef(value)}
+        onCurrentChange={(value) => setCurrentRef(value)}
+        diffState={projectDiff.isPending ? "loading" : diffFresh ? "live" : "refreshing"}
+        diffError={diffError}
+        repository={inspection.data?.repository}
+        configFiles={inspection.data?.summary.configFiles}
+        sourceFiles={inspection.data?.summary.sourceFiles}
+        changedCount={changedFiles.length}
+        diffStats={diffStats}
+        showStats={changedFiles.length > 0}
+        presets={presets}
+        presetLabel={presetLabel}
+        onPresetLabelChange={(value) => setPresetLabel(value)}
+        onSavePreset={() => {
+          updateProject(active.id, {
+            comparePresets: [
+              ...presets,
+              {
+                id: newProjectId(),
+                label: presetLabel.trim(),
+                baseRef,
+                currentRef,
+              },
+            ],
+          });
+          setPresetLabel("");
+        }}
+        onDeletePreset={(id) =>
+          updateProject(active.id, {
+            comparePresets: presets.filter((entry) => entry.id !== id),
+          })
         }
-      >
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
-            <RefPicker
-              localPath={active.localPath}
-              label="Base — compare from"
-              value={baseRef}
-              onChange={setBaseRef}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <RefPicker
-              localPath={active.localPath}
-              label="Current — compare to"
-              value={currentRef}
-              onChange={setCurrentRef}
-            />
-          </Col>
-        </Row>
+        onSelectPreset={(base, current) => {
+          setBaseRef(base);
+          setCurrentRef(current);
+        }}
+      />
 
-        {inspection.data && (
-          <Space size={[8, 8]} wrap style={{ marginTop: 12 }}>
-            <Tag>Branch: {inspection.data.repository.branch}</Tag>
-            <Tag>HEAD: {inspection.data.repository.headCommit.slice(0, 12)}</Tag>
-            {inspection.data.repository.hasUncommittedChanges && (
-              <Tag color="orange">uncommitted changes</Tag>
-            )}
-            <Tag>
-              {inspection.data.summary.configFiles} data files ·{" "}
-              {inspection.data.summary.sourceFiles} code files
-            </Tag>
-          </Space>
-        )}
-
-        <div style={{ marginTop: 12 }}>
-          <Typography.Text strong>Compare presets</Typography.Text>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-            {presets.length === 0 && (
-              <Typography.Text type="secondary">
-                No presets yet — save the current pair for one-click reuse.
-              </Typography.Text>
-            )}
-            {presets.map((preset) => (
-              <Tag
-                key={preset.id}
-                style={{ cursor: "pointer", padding: "4px 10px" }}
-                onClick={() => {
-                  setBaseRef(preset.baseRef);
-                  setCurrentRef(preset.currentRef);
-                }}
-                closable
-                onClose={(event) => {
-                  event.preventDefault();
-                  updateProject(active.id, {
-                    comparePresets: presets.filter((entry) => entry.id !== preset.id),
-                  });
-                }}
-              >
-                {preset.label}: {preset.baseRef} → {preset.currentRef}
-              </Tag>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <Input
-              placeholder="Preset name, e.g. main vs my branch"
-              value={presetLabel}
-              onChange={(event) => setPresetLabel(event.target.value)}
-              style={{ maxWidth: 320 }}
-            />
-            <Button
-              disabled={presetLabel.trim().length === 0}
-              onClick={() => {
-                updateProject(active.id, {
-                  comparePresets: [
-                    ...presets,
-                    {
-                      id: newProjectId(),
-                      label: presetLabel.trim(),
-                      baseRef,
-                      currentRef,
-                    },
-                  ],
-                });
-                setPresetLabel("");
-              }}
-            >
-              Save current pair
-            </Button>
-          </div>
-        </div>
-
-        {diffFresh && changedFiles.length > 0 && (
-          <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile label="Files changed" value={changedFiles.length} />
-            </Col>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile
-                label="Added"
-                value={diffStats.added}
-                dim={diffStats.added === 0}
-              />
-            </Col>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile
-                label="Modified"
-                value={diffStats.modified}
-                dim={diffStats.modified === 0}
-              />
-            </Col>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile
-                label="Deleted"
-                value={diffStats.deleted}
-                dim={diffStats.deleted === 0}
-              />
-            </Col>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile
-                label="Renamed"
-                value={diffStats.renamed}
-                dim={diffStats.renamed === 0}
-              />
-            </Col>
-            <Col xs={12} sm={8} md={4}>
-              <StatTile
-                label="Untracked"
-                value={diffStats.untracked}
-                dim={diffStats.untracked === 0}
-              />
-            </Col>
-          </Row>
-        )}
-      </SectionCard>
-
-      {inspection.data && (
+      <>
         <SectionCard bodyStyle={{ paddingTop: 8 }}>
           <Tabs
             activeKey={tab}
@@ -396,95 +282,61 @@ export function ReviewPage(): React.JSX.Element {
                 key: "ai",
                 label: "AI Review",
                 children: (
-                  <div>
-                    <SectionCard title="Review goal" style={{ marginBottom: 12 }}>
-                      <GoalField
-                        value={goal}
-                        onChange={setGoal}
-                        extraTemplates={extraTemplates}
-                        onApplyTemplate={(template) => {
-                          setGoal(template.text);
-                          if (template.lens) setLens(template.lens);
-                          if (template.verbosity) setVerbosity(template.verbosity);
-                        }}
-                      />
-                    </SectionCard>
-                    <SectionCard title="Review options" style={{ marginBottom: 12 }}>
-                      <Row gutter={[16, 0]}>
-                        <Col xs={24} md={12}>
-                          <LensPicker value={lens} onChange={setLens} />
-                        </Col>
-                        <Col xs={24} md={12}>
-                          <VerbosityPicker value={verbosity} onChange={setVerbosity} />
-                        </Col>
-                      </Row>
-                      <div style={{ marginTop: 12 }}>
-                        <Typography.Text strong>Focus files (optional)</Typography.Text>
-                        <Select
-                          mode="multiple"
-                          allowClear
-                          placeholder="All changed files by default"
-                          value={focusPaths}
-                          onChange={setFocusPaths}
-                          style={{ width: "100%", marginTop: 6 }}
-                          options={changedFiles.map((file) => ({
-                            value: file.relativePath,
-                            label: file.relativePath,
-                          }))}
-                        />
-                      </div>
-                      <div style={{ marginTop: 12 }}>
-                        <Typography.Text strong>Notes for the reviewer (optional)</Typography.Text>
-                        <Input.TextArea
-                          rows={2}
-                          value={notes}
-                          onChange={(event) => setNotes(event.target.value)}
-                          placeholder="e.g. Pay attention to reward pacing; ignore test fixtures."
-                          style={{ marginTop: 6 }}
-                        />
-                      </div>
-                    </SectionCard>
-                    <Button
-                      type="primary"
-                      size="large"
-                      block
-                      disabled={!canRun}
-                      loading={startAnalysis.isPending}
-                      onClick={runReview}
-                    >
-                      {health.data?.ai.configured === true
-                        ? "Review this change with AI"
-                        : "Review this change (AI off — deterministic checks only)"}
-                    </Button>
-                    {startError instanceof ApiError && (
-                      <Alert
-                        type="error"
-                        showIcon
-                        style={{ marginTop: 12 }}
-                        message={`${startError.code}: ${startError.message}`}
-                      />
-                    )}
-                  </div>
+                  <AiReviewPanel
+                    goal={goal}
+                    onGoalChange={(value) => setGoal(value)}
+                    extraTemplates={extraTemplates}
+                    onApplyTemplate={(template) => {
+                      setGoal(template.text);
+                      if (template.lens) setLens(template.lens);
+                      if (template.verbosity) setVerbosity(template.verbosity);
+                    }}
+                    lens={lens}
+                    onLensChange={(value) => setLens(value)}
+                    verbosity={verbosity}
+                    onVerbosityChange={(value) => setVerbosity(value)}
+                    focusPaths={focusPaths}
+                    onFocusPathsChange={(value) => setFocusPaths(value)}
+                    changedFiles={changedFiles}
+                    notes={notes}
+                    onNotesChange={(value) => setNotes(value)}
+                    canRun={canRun}
+                    running={startAnalysis.isPending}
+                    aiConfigured={health.data?.ai.configured === true}
+                    onRun={runReview}
+                    startError={startError}
+                  />
                 ),
               },
               {
                 key: "diff",
                 label: "Git Diff",
-                children: projectDiff.isPending ||
-                (!diffFresh && projectDiff.data === undefined) ? (
-                  <Skeleton active />
-                ) : diffError instanceof ApiError ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message={`${diffError.code}: ${diffError.message}`}
-                  />
+                children: projectDiff.data === undefined ? (
+                  projectDiff.isPending ? (
+                    <Skeleton active />
+                  ) : diffError instanceof ApiError ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      message={`${diffError.code}: ${diffError.message}`}
+                    />
+                  ) : (
+                    <Empty description="No diff yet — it loads automatically for this pair." />
+                  )
                 ) : (
                   <SectionCard title="Unified diff">
+                    {!diffFresh && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message="Showing the previous pair while the new diff loads."
+                      />
+                    )}
                     <DiffViewer
-                      diff={diffFresh ? projectDiff.data?.unifiedDiff : undefined}
-                      truncated={projectDiff.data?.diffTruncated}
-                      files={diffFresh ? changedFiles : undefined}
+                      diff={projectDiff.data.unifiedDiff}
+                      truncated={projectDiff.data.diffTruncated}
+                      files={changedFiles}
                     />
                   </SectionCard>
                 ),
@@ -494,7 +346,7 @@ export function ReviewPage(): React.JSX.Element {
                 label: `Files Changed (${changedFiles.length})`,
                 children:
                   changedFiles.length === 0 ? (
-                    <Empty description="No changed files for this pair — or the diff is still loading." />
+                    <Empty description="No changed files for this pair." />
                   ) : (
                     <SectionCard title="Changed files">
                       <Table
@@ -551,6 +403,24 @@ export function ReviewPage(): React.JSX.Element {
                   ),
               },
               {
+                key: "writers",
+                label: "Writers",
+                children: (
+                  <WritersPanel
+                    localPath={active.localPath}
+                    baseRef={baseRef}
+                    currentRef={currentRef}
+                  />
+                ),
+              },
+              {
+                key: "localization",
+                label: "Localization",
+                children: (
+                  <LocalizationPanel localPath={active.localPath} baseRef={currentRef} />
+                ),
+              },
+              {
                 key: "whatif",
                 label: "What-if",
                 children: (
@@ -565,7 +435,7 @@ export function ReviewPage(): React.JSX.Element {
             ]}
           />
         </SectionCard>
-      )}
+      </>
     </div>
   );
 }

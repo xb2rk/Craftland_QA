@@ -108,6 +108,24 @@ export interface WhatIfResult {
   error?: string;
 }
 
+export type WriterKind = "commit" | "pr";
+
+export interface WriterDraft {
+  kind: WriterKind;
+  text: string;
+  aiStatus: "not_configured" | "completed" | "failed" | "skipped";
+  error?: string;
+}
+
+export interface LocalizationCheckOutput {
+  baseRef: string;
+  filesChecked: string[];
+  findings: Finding[];
+  aiReport?: NormalizedAiReport | Record<string, unknown>;
+  aiStatus: "not_configured" | "completed" | "failed";
+  error?: string;
+}
+
 export interface NormalizedAiReport {
   schema_version: string;
   stage: string;
