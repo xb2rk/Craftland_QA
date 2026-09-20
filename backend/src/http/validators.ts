@@ -13,12 +13,34 @@ export const analysisLensSchema = z.enum([
   "test_plan",
 ]);
 
+export const verbositySchema = z.enum(["short", "medium", "long", "auto"]);
+
 export const createAnalysisBodySchema = z.object({
   localPath: z.string().trim().min(1).max(1024),
   baseRef: z.string().trim().min(1).max(255).default("HEAD~1"),
   currentRef: z.string().trim().min(1).max(255).default("WORKTREE"),
   goal: z.string().trim().min(1).max(4000),
   lens: analysisLensSchema.default("pre_merge"),
+  verbosity: verbositySchema.default("auto"),
+  focusPaths: z.array(z.string().trim().min(1).max(1024)).max(50).default([]),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+export const projectDiffBodySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  baseRef: z.string().trim().min(1).max(255).default("HEAD~1"),
+  currentRef: z.string().trim().min(1).max(255).default("WORKTREE"),
+});
+
+export const whatIfBodySchema = z.object({
+  localPath: z.string().trim().min(1).max(1024),
+  baseRef: z.string().trim().min(1).max(255).default("WORKTREE"),
+  filePath: z.string().trim().min(1).max(1024),
+  keyColumn: z.string().trim().min(1).max(255).optional(),
+  keyValue: z.string().trim().min(1).max(1024),
+  column: z.string().trim().min(1).max(255),
+  newValue: z.string().trim().max(4096),
+  goal: z.string().trim().max(4000).optional(),
 });
 
 export const askQuestionBodySchema = z.object({

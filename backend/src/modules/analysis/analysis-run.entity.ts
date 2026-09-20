@@ -21,6 +21,22 @@ export type AnalysisLens =
   | "explain"
   | "test_plan";
 
+export type Verbosity = "short" | "medium" | "long" | "auto";
+
+export interface WhatIfResult {
+  filePath: string;
+  baseRef: string;
+  keyColumn: string;
+  keyValue: string;
+  column: string;
+  oldValue: string;
+  newValue: string;
+  findings: Finding[];
+  aiReport?: Record<string, unknown>;
+  aiStatus: AiStatus;
+  error?: string;
+}
+
 export interface RunExchange {
   id: string;
   question: string;
@@ -64,5 +80,8 @@ export interface AnalysisRun {
   aiStatus?: AiStatus;
   error?: string;
   lens?: AnalysisLens;
+  verbosity?: Verbosity;
+  focusPaths?: string[];
+  notes?: string;
   exchanges?: RunExchange[];
 }

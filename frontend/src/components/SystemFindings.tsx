@@ -1,9 +1,15 @@
-import { Collapse, Empty, Tag, Typography } from "antd";
+import { Button, Collapse, Empty, Tag, Typography } from "antd";
 
 import type { Finding } from "../api/types.js";
 import { groupFindingsBySystem, humanizeFindingCode, severityColor } from "./system-map.js";
 
-export function SystemFindings({ findings }: { findings: Finding[] }): React.JSX.Element {
+export function SystemFindings({
+  findings,
+  onAsk,
+}: {
+  findings: Finding[];
+  onAsk?: (question: string) => void;
+}): React.JSX.Element {
   if (findings.length === 0) {
     return <Empty description="No issues found — the change looks clean." />;
   }
@@ -35,6 +41,22 @@ export function SystemFindings({ findings }: { findings: Finding[] }): React.JSX
                   {finding.filePath}
                   {finding.line !== undefined ? `:${finding.line}` : ""}
                 </Typography.Text>
+                {onAsk && (
+                  <>
+                    {" "}
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={() =>
+                        onAsk(
+                          `Explain "${humanizeFindingCode(finding.code)}" in ${finding.filePath}: ${finding.message} — is it safe?`,
+                        )
+                      }
+                    >
+                      Ask
+                    </Button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

@@ -1,21 +1,29 @@
-import { Alert, Button, Card, Skeleton, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, Button, Card, Skeleton, Tabs, Tag, Typography } from "antd";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
-import { useAnalysis, useHealth } from "../api/hooks.js";
-import { AiReport } from "../components/AiReport.js";
-import { DiffViewer } from "../components/DiffViewer.js";
+import { useAnalysis, useHealth, useStartAnalysisMutation } from "../api/hooks.js";
+import { ApiError } from "../api/types.js";
+import { AiReport, unknownQuestion } from "../components/AiReport.js";
 import { FixChecklist } from "../components/FixChecklist.js";
 import { QuestionDrawer } from "../components/QuestionDrawer.js";
 import { SystemFindings } from "../components/SystemFindings.js";
 import { Verdict } from "../components/Verdict.js";
-import { exportRunJson } from "../components/run-io.js";
+import { exportDiffText, exportRunJson } from "../components/run-io.js";
 
 export function RunDetailPage(): React.JSX.Element {
   const { id } = useParams();
+  const navigate = useNavigate();
   const analysis = useAnalysis(id);
   const health = useHealth();
+  const startAnalysis = useStartAnalysisMutation();
   const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [drawerQuestion, setDrawerQuestion] = useState<string | undefined>(undefined);
+
+  const openAsk = (question?: string): void => {
+    setDrawerQuestion(question);
+    setQuestionsOpen(true);
+  };
 
   if (analysis.isLoading) return <Skeleton active />;
   if (analysis.error instanceof Error) {
@@ -26,22 +34,59 @@ export function RunDetailPage(): React.JSX.Element {
 
   const pending = run.status === "queued" || run.status === "running";
 
+  const rerun = (): void => {
+    startAnalysis.mutate(
+      {
+        localPath: run.localPath,
+        baseRef: run.baseRef,
+        currentRef: run.currentRef,
+        goal: run.goal,
+        lens: run.lens,
+        verbosity: run.verbosity,
+        focusPaths: run.focusPaths,
+        notes: run.notes,
+      },
+      { onSuccess: (created) => navigate(`/runs/${created.id}`) },
+    );
+  };
+
   return (
     <div>
       <Card
         title={run.goal}
         extra={
-          <span style={{ display: "flex", gap: 8 }}>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {run.kind === "comparison" && <Tag color="purple">comparison</Tag>}
             {run.lens && run.lens !== "pre_merge" && (
               <Tag color="blue">{run.lens.replace(/_/g, " ")}</Tag>
             )}
+            {run.verbosity && run.verbosity !== "auto" && <Tag>{run.verbosity}</Tag>}
+            {run.focusPaths && run.focusPaths.length > 0 && (
+              <Tag color="purple">{run.focusPaths.length} focused</Tag>
+            )}
             <Tag>{run.status}</Tag>
-            <Button size="small" onClick={() => setQuestionsOpen(true)}>
+            {run.kind === "analysis" && (
+              <Button
+                size="small"
+                disabled={pending}
+                loading={startAnalysis.isPending}
+                onClick={rerun}
+              >
+                Rerun
+              </Button>
+            )}
+            <Button size="small" onClick={() => openAsk()}>
               Ask about this change
             </Button>
             <Button size="small" onClick={() => exportRunJson(run)}>
               Export JSON
+            </Button>
+            <Button
+              size="small"
+              disabled={!run.comparison?.unifiedDiff}
+              onClick={() => exportDiffText(run)}
+            >
+              Export diff
             </Button>
           </span>
         }
@@ -83,7 +128,10 @@ export function RunDetailPage(): React.JSX.Element {
                 <Verdict run={run} />
                 {!pending && run.aiReport !== undefined && run.aiReport !== null && (
                   <div style={{ marginTop: 12 }}>
-                    <AiReport report={run.aiReport} />
+                    <AiReport
+                      report={run.aiReport}
+                      onAskUnknown={(unknown) => openAsk(unknownQuestion(unknown))}
+                    />
                   </div>
                 )}
                 {!pending && (
@@ -104,36 +152,9 @@ export function RunDetailPage(): React.JSX.Element {
                 message="The review is still running — issues appear here automatically."
               />
             ) : (
-              <SystemFindings findings={run.findings} />
-            ),
-          },
-          {
-            key: "diff",
-            label: "Diff",
-            children: (
-              <DiffViewer
-                diff={run.comparison?.unifiedDiff}
-                truncated={run.comparison?.diffTruncated}
-              />
-            ),
-          },
-          {
-            key: "changes",
-            label: `Changed files (${run.comparison?.changedFiles.length ?? 0})`,
-            children: (
-              <Table
-                rowKey="relativePath"
-                pagination={{ pageSize: 20 }}
-                dataSource={run.comparison?.changedFiles ?? []}
-                columns={[
-                  { title: "File", dataIndex: "relativePath" },
-                  { title: "Change", dataIndex: "changeType" },
-                  {
-                    title: "Was",
-                    dataIndex: "previousPath",
-                    render: (value?: string) => value ?? "—",
-                  },
-                ]}
+              <SystemFindings
+                findings={run.findings}
+                onAsk={(question) => openAsk(question)}
               />
             ),
           },
@@ -152,9 +173,18 @@ export function RunDetailPage(): React.JSX.Element {
       <QuestionDrawer
         runId={run.id}
         open={questionsOpen}
+        initialQuestion={drawerQuestion}
         aiConfigured={health.data?.ai.configured === true}
         onClose={() => setQuestionsOpen(false)}
       />
+      {startAnalysis.error instanceof ApiError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={`${startAnalysis.error.code}: ${startAnalysis.error.message}`}
+        />
+      )}
     </div>
   );
 }

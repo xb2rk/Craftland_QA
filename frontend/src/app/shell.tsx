@@ -1,4 +1,10 @@
-import { DashboardOutlined, HistoryOutlined } from "@ant-design/icons";
+import {
+  DashboardOutlined,
+  ExperimentOutlined,
+  FileSearchOutlined,
+  HistoryOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
 import { Alert, Badge, Dropdown, Layout, Menu, Select, Typography } from "antd";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -9,12 +15,18 @@ import { ProjectProvider, useProjects } from "./project-context.js";
 const { Content, Header, Sider } = Layout;
 
 const MENU_ITEMS = [
-  { key: "/", icon: <DashboardOutlined />, label: <Link to="/">Analyze</Link> },
+  { key: "/", icon: <DashboardOutlined />, label: <Link to="/">Overview</Link> },
+  { key: "/review", icon: <FileSearchOutlined />, label: <Link to="/review">Review</Link> },
   { key: "/runs", icon: <HistoryOutlined />, label: <Link to="/runs">Runs</Link> },
+  { key: "/whatif", icon: <ExperimentOutlined />, label: <Link to="/whatif">What-if Lab</Link> },
+  { key: "/settings", icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
 ];
 
 function selectedKey(pathname: string): string {
+  if (pathname.startsWith("/review")) return "/review";
   if (pathname.startsWith("/runs")) return "/runs";
+  if (pathname.startsWith("/whatif")) return "/whatif";
+  if (pathname.startsWith("/settings")) return "/settings";
   return "/";
 }
 

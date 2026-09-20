@@ -10,13 +10,21 @@ export type AnalysisLens =
   | "explain"
   | "test_plan";
 
-export const ANALYSIS_LENSES: Array<{ value: AnalysisLens; label: string; hint: string }> = [
-  { value: "pre_merge", label: "Pre-merge risk check", hint: "Ship / don't-ship verdict with verification list." },
+export const ANALYSIS_LENSES: Array<{ value: AnalysisLens; label: string; hint: string }> = [  { value: "pre_merge", label: "Pre-merge risk check", hint: "Ship / don't-ship verdict with verification list." },
   { value: "balance", label: "Balance review", hint: "Difficulty curve, outliers, unfair spikes." },
   { value: "economy", label: "Economy audit", hint: "Prices, rewards, progression pacing." },
   { value: "localization", label: "Localization QA", hint: "Row widths, keys, references across CSVs." },
   { value: "explain", label: "Explain this change", hint: "Plain designer language, no jargon." },
   { value: "test_plan", label: "Test plan", hint: "QA checklist derived from the diff." },
+];
+
+export type Verbosity = "short" | "medium" | "long" | "auto";
+
+export const VERBOSITIES: Array<{ value: Verbosity; label: string; hint: string }> = [
+  { value: "short", label: "Short", hint: "Verdict plus at most 3 findings and 3 recommendations." },
+  { value: "medium", label: "Medium", hint: "Every material finding, kept concise." },
+  { value: "long", label: "Long", hint: "Full detail on every finding and recommendation." },
+  { value: "auto", label: "Auto", hint: "Response sized to the change." },
 ];
 
 export interface RunExchange {
@@ -71,7 +79,33 @@ export interface AnalysisRun {
   aiStatus?: AiStatus;
   error?: string;
   lens?: AnalysisLens;
+  verbosity?: Verbosity;
+  focusPaths?: string[];
+  notes?: string;
   exchanges?: RunExchange[];
+}
+
+export interface ProjectDiffResult {
+  baseCommit: string;
+  currentCommit: string;
+  currentIsWorktree: boolean;
+  changedFiles: ChangedFileRef[];
+  unifiedDiff?: string;
+  diffTruncated?: boolean;
+}
+
+export interface WhatIfResult {
+  filePath: string;
+  baseRef: string;
+  keyColumn: string;
+  keyValue: string;
+  column: string;
+  oldValue: string;
+  newValue: string;
+  findings: Finding[];
+  aiReport?: NormalizedAiReport | Record<string, unknown>;
+  aiStatus: "not_configured" | "completed" | "failed";
+  error?: string;
 }
 
 export interface NormalizedAiReport {

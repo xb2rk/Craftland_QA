@@ -1,5 +1,5 @@
 import { Alert, Button, Drawer, Input, List, Skeleton, Tag, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAskQuestionMutation, useQuestions } from "../api/hooks.js";
 import { ApiError } from "../api/types.js";
@@ -15,6 +15,7 @@ interface QuestionDrawerProps {
   open: boolean;
   aiConfigured: boolean;
   onClose: () => void;
+  initialQuestion?: string;
 }
 
 export function QuestionDrawer({
@@ -22,10 +23,15 @@ export function QuestionDrawer({
   open,
   aiConfigured,
   onClose,
+  initialQuestion,
 }: QuestionDrawerProps): React.JSX.Element {
   const questions = useQuestions(open ? runId : undefined);
   const ask = useAskQuestionMutation(open ? runId : undefined);
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (open) setDraft(initialQuestion ?? "");
+  }, [open, initialQuestion]);
 
   const submit = (question: string): void => {
     const trimmed = question.trim();

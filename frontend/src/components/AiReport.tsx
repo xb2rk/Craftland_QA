@@ -1,4 +1,4 @@
-import { Card, Empty, List, Tag, Typography } from "antd";
+import { Button, Card, Empty, List, Tag, Typography } from "antd";
 
 import type { NormalizedAiReport } from "../api/types.js";
 
@@ -64,7 +64,25 @@ function renderEvidence(evidence: unknown): string | null {
   return String(evidence);
 }
 
-export function AiReport({ report }: { report: unknown }): React.JSX.Element {
+export function unknownQuestion(unknown: unknown): string {
+  if (typeof unknown === "string") return `Is this gap covered: ${unknown}`;
+  if (typeof unknown === "object" && unknown !== null) {
+    const item = unknown as { id?: unknown; statement?: unknown };
+    const id = item.id !== undefined ? String(item.id) : "this gap";
+    const statement =
+      item.statement !== undefined ? String(item.statement) : JSON.stringify(unknown);
+    return `About ${id}: ${statement} — is it covered by the evidence, and what should I check?`;
+  }
+  return `Is this gap covered: ${String(unknown)}`;
+}
+
+export function AiReport({
+  report,
+  onAskUnknown,
+}: {
+  report: unknown;
+  onAskUnknown?: (question: string) => void;
+}): React.JSX.Element {
   const normalized = asReport(report);
   if (normalized === null) return <Empty description="No AI report." />;
   const summary = normalized.summary ?? {
@@ -162,7 +180,23 @@ export function AiReport({ report }: { report: unknown }): React.JSX.Element {
           <List
             dataSource={unknowns}
             renderItem={(unknown, index) => (
-              <List.Item key={index}>
+              <List.Item
+                key={index}
+                actions={
+                  onAskUnknown
+                    ? [
+                        <Button
+                          key="ask"
+                          type="link"
+                          size="small"
+                          onClick={() => onAskUnknown(unknownQuestion(unknown))}
+                        >
+                          Ask about this gap
+                        </Button>,
+                      ]
+                    : undefined
+                }
+              >
                 {renderUnknown(unknown)}
               </List.Item>
             )}

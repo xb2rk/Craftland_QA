@@ -89,6 +89,18 @@ export function useCompareMutation() {
   });
 }
 
+export function useProjectDiffMutation() {
+  return useMutation({
+    mutationFn: api.projectDiff,
+  });
+}
+
+export function useWhatIfMutation() {
+  return useMutation({
+    mutationFn: api.runWhatIf,
+  });
+}
+
 export function useInspectQuery(localPath: string | undefined) {
   return useQuery<ProjectInspection>({
     queryKey: ["inspect", localPath],

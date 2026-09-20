@@ -17,6 +17,9 @@ interface AnalysisRunRow extends RowDataPacket {
   current_ref: string;
   goal: string;
   lens: AnalysisRun["lens"] | null;
+  verbosity: AnalysisRun["verbosity"] | null;
+  focus_paths_json: string | string[] | null;
+  notes: string | null;
   status: AnalysisRun["status"];
   project_summary_json: string | Record<string, unknown> | null;
   comparison_json: string | Record<string, unknown> | null;
@@ -152,9 +155,9 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
   private async upsertRun(connection: PoolConnection, run: AnalysisRun): Promise<void> {
     await connection.execute<ResultSetHeader>(
       `INSERT INTO analysis_runs
-        (id, kind, comparison_source_ids, local_path, base_ref, current_ref, goal, lens, status,
+        (id, kind, comparison_source_ids, local_path, base_ref, current_ref, goal, lens, verbosity, focus_paths_json, notes, status,
          project_summary_json, comparison_json, ai_report_json, ai_status, error_message, created_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          status = VALUES(status),
          project_summary_json = VALUES(project_summary_json),
@@ -174,6 +177,9 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
         run.currentRef,
         run.goal,
         run.lens ?? null,
+        run.verbosity ?? null,
+        run.focusPaths === undefined ? null : JSON.stringify(run.focusPaths),
+        run.notes ?? null,
         run.status,
         run.projectSummary === undefined ? null : JSON.stringify(run.projectSummary),
         run.comparison === undefined ? null : JSON.stringify(run.comparison),
@@ -217,6 +223,14 @@ export class MySqlAnalysisRunRepository implements AnalysisRunRepository {
       goal: row.goal,
       status: row.status,
       lens: row.lens ?? undefined,
+      verbosity: row.verbosity ?? undefined,
+      focusPaths:
+        row.focus_paths_json === null
+          ? undefined
+          : typeof row.focus_paths_json === "string"
+            ? (JSON.parse(row.focus_paths_json) as string[])
+            : row.focus_paths_json,
+      notes: row.notes ?? undefined,
       createdAt: row.created_at.toISOString(),
       completedAt: row.completed_at?.toISOString(),
       projectSummary: parseJsonColumn<AnalysisRun["projectSummary"]>(

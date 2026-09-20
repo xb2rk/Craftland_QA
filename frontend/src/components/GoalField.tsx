@@ -1,6 +1,8 @@
 import { Input, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 
+import type { AnalysisLens, Verbosity } from "../api/types.js";
+
 const ROTATING_EXAMPLES = [
   "Will the new zombie HP break Night 3 difficulty?",
   "Did shop prices stay within the economy curve?",
@@ -27,12 +29,21 @@ const TEMPLATES: Array<{ label: string; text: string }> = [
   },
 ];
 
+export interface ExtraTemplate {
+  label: string;
+  text: string;
+  lens?: AnalysisLens;
+  verbosity?: Verbosity;
+}
+
 interface GoalFieldProps {
   value: string;
   onChange: (value: string) => void;
+  extraTemplates?: ExtraTemplate[];
+  onApplyTemplate?: (template: ExtraTemplate) => void;
 }
 
-export function GoalField({ value, onChange }: GoalFieldProps): React.JSX.Element {
+export function GoalField({ value, onChange, extraTemplates, onApplyTemplate }: GoalFieldProps): React.JSX.Element {
   const [exampleIndex, setExampleIndex] = useState(0);
 
   useEffect(() => {
@@ -63,6 +74,19 @@ export function GoalField({ value, onChange }: GoalFieldProps): React.JSX.Elemen
             key={template.label}
             style={{ cursor: "pointer", padding: "4px 10px" }}
             onClick={() => onChange(template.text)}
+          >
+            {template.label}
+          </Tag>
+        ))}
+        {(extraTemplates ?? []).map((template) => (
+          <Tag
+            key={`saved-${template.label}`}
+            color="blue"
+            style={{ cursor: "pointer", padding: "4px 10px" }}
+            onClick={() => {
+              if (onApplyTemplate) onApplyTemplate(template);
+              else onChange(template.text);
+            }}
           >
             {template.label}
           </Tag>

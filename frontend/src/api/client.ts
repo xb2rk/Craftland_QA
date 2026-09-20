@@ -6,8 +6,11 @@ import {
   type Health,
   type ProjectBranch,
   type ProjectCommit,
+  type ProjectDiffResult,
   type ProjectInspection,
   type RunExchange,
+  type Verbosity,
+  type WhatIfResult,
 } from "./types.js";
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
@@ -72,8 +75,36 @@ export const api = {
     currentRef: string;
     goal: string;
     lens?: AnalysisLens;
+    verbosity?: Verbosity;
+    focusPaths?: string[];
+    notes?: string;
   }): Promise<AnalysisRun> {
     return requestJson<AnalysisRun>("/api/analysis-runs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  projectDiff(input: {
+    localPath: string;
+    baseRef: string;
+    currentRef: string;
+  }): Promise<ProjectDiffResult> {
+    return requestJson<ProjectDiffResult>("/api/projects/diff", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  runWhatIf(input: {
+    localPath: string;
+    baseRef?: string;
+    filePath: string;
+    keyColumn?: string;
+    keyValue: string;
+    column: string;
+    newValue: string;
+    goal?: string;
+  }): Promise<WhatIfResult> {
+    return requestJson<WhatIfResult>("/api/projects/whatif", {
       method: "POST",
       body: JSON.stringify(input),
     });

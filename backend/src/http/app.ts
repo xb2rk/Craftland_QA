@@ -14,8 +14,10 @@ import {
   importRunBodySchema,
   inspectProjectBodySchema,
   listAnalysesQuerySchema,
+  projectDiffBodySchema,
   projectRefsQuerySchema,
   searchCommitsQuerySchema,
+  whatIfBodySchema,
 } from "./validators.js";
 import type { AnalysisService } from "../modules/analysis/analysis.service.js";
 import {
@@ -101,6 +103,33 @@ export function createApp(deps: AppDependencies): express.Express {
           allowedRoots: deps.config.analyzedRoots,
         }),
       });
+    }),
+  );
+
+  app.post(
+    "/api/projects/diff",
+    asyncRoute(async (req, res) => {
+      const body = projectDiffBodySchema.parse(req.body);
+      res.json(await deps.analysisService.diffProject(body));
+    }),
+  );
+
+  app.post(
+    "/api/projects/whatif",
+    asyncRoute(async (req, res) => {
+      const body = whatIfBodySchema.parse(req.body);
+      res.json(
+        await deps.analysisService.runWhatIf({
+          localPath: body.localPath,
+          baseRef: body.baseRef,
+          filePath: body.filePath,
+          keyColumn: body.keyColumn,
+          keyValue: body.keyValue,
+          column: body.column,
+          newValue: body.newValue,
+          goal: body.goal,
+        }),
+      );
     }),
   );
 
@@ -193,6 +222,8 @@ function buildOpenApiDocument(): Record<string, unknown> {
       "/api/projects/browse": { get: { summary: "Browse allowed directories for project selection" } },
       "/api/projects/branches": { get: { summary: "List branches of a local Git project" } },
       "/api/projects/commits": { get: { summary: "Search commits of a local Git project" } },
+      "/api/projects/diff": { post: { summary: "Preview the file diff between two refs without running AI" } },
+      "/api/projects/whatif": { post: { summary: "Evaluate a hypothetical single-cell config edit" } },
       "/api/analysis-runs": {
         post: { summary: "Start an analysis run" },
         get: { summary: "List analysis runs" },

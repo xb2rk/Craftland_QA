@@ -1,29 +1,14 @@
-import { Alert, Button, Card, Input, List, Select, Skeleton, Table, Tag, Typography, Upload } from "antd";
+import { Alert, Button, Card, Input, Select, Skeleton, Table, Tag, Typography, Upload } from "antd";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useAnalyses, useCompareMutation, useImportRunMutation } from "../api/hooks.js";
-import { ApiError, type AnalysisRun, type NormalizedAiReport } from "../api/types.js";
+import { ANALYSIS_LENSES, ApiError, type NormalizedAiReport } from "../api/types.js";
 import { riskColor } from "../components/system-map.js";
 
 function runRisk(run: { aiReport?: unknown }): string {
   const report = run.aiReport as NormalizedAiReport | undefined;
   return report?.summary?.risk_level ?? "—";
-}
-
-function changePreview(run: AnalysisRun): React.JSX.Element {
-  const files = run.comparison?.changedFiles ?? [];
-  if (files.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
-  return (
-    <span>
-      {files.slice(0, 3).map((file) => (
-        <Tag key={file.relativePath} style={{ marginBottom: 2 }}>
-          {file.relativePath.split("/").slice(-1)[0]}
-        </Tag>
-      ))}
-      {files.length > 3 && <Tag>+{files.length - 3} more</Tag>}
-    </span>
-  );
 }
 
 export function RunsPage(): React.JSX.Element {
@@ -33,6 +18,7 @@ export function RunsPage(): React.JSX.Element {
   const importRun = useImportRunMutation();
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [query, setQuery] = useState("");
+  const [lens, setLens] = useState<string | undefined>(undefined);
   const [compareMode, setCompareMode] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [compareGoal, setCompareGoal] = useState("Compare the two selected runs");
@@ -40,6 +26,7 @@ export function RunsPage(): React.JSX.Element {
   const rows = useMemo(() => {
     return (analyses.data ?? []).filter((run) => {
       if (status !== undefined && run.status !== status) return false;
+      if (lens !== undefined && run.lens !== lens) return false;
       if (query.trim().length === 0) return true;
       const needle = query.trim().toLowerCase();
       return (
@@ -47,7 +34,7 @@ export function RunsPage(): React.JSX.Element {
         run.localPath.toLowerCase().includes(needle)
       );
     });
-  }, [analyses.data, status, query]);
+  }, [analyses.data, status, query, lens]);
 
   if (analyses.isLoading) return <Skeleton active />;
 
@@ -72,6 +59,17 @@ export function RunsPage(): React.JSX.Element {
               label: value,
             }))}
             style={{ width: 140 }}
+          />
+          <Select
+            allowClear
+            placeholder="Lens"
+            value={lens}
+            onChange={setLens}
+            options={ANALYSIS_LENSES.map((entry) => ({
+              value: entry.value,
+              label: entry.label,
+            }))}
+            style={{ width: 170 }}
           />
           <Button
             type={compareMode ? "primary" : "default"}
@@ -110,23 +108,6 @@ export function RunsPage(): React.JSX.Element {
       <Table
         rowKey="id"
         dataSource={rows}
-        expandable={{
-          expandedRowRender: (run) => (
-            <List
-              size="small"
-              dataSource={(run.comparison?.changedFiles ?? []).slice(0, 10)}
-              renderItem={(file) => (
-                <List.Item>
-                  <Typography.Text code style={{ fontSize: 12 }}>
-                    {file.relativePath}
-                  </Typography.Text>{" "}
-                  <Tag>{file.changeType}</Tag>
-                </List.Item>
-              )}
-            />
-          ),
-          rowExpandable: (run) => (run.comparison?.changedFiles.length ?? 0) > 0,
-        }}
         rowSelection={
           compareMode
             ? {
@@ -163,9 +144,14 @@ export function RunsPage(): React.JSX.Element {
             render: (findings: Array<unknown>) => findings.length,
           },
           {
-            title: "Change",
-            key: "change",
-            render: (_, run) => changePreview(run),
+            title: "Lens",
+            dataIndex: "lens",
+            render: (value: string | undefined) =>
+              value ? (
+                <Tag color="blue">{value.replace(/_/g, " ")}</Tag>
+              ) : (
+                <Tag>—</Tag>
+              ),
           },
           {
             title: "Compared",

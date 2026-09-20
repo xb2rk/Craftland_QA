@@ -71,6 +71,11 @@ export function exportRunJson(run: AnalysisRun): void {
   downloadTextFile(`analysis-run-${run.id}.json`, JSON.stringify(run, null, 2), "application/json");
 }
 
+export function exportDiffText(run: AnalysisRun): void {
+  const diff = run.comparison?.unifiedDiff ?? "";
+  downloadTextFile(`diff-${run.id}.txt`, diff, "text/plain");
+}
+
 export function exportChecklistMarkdown(run: AnalysisRun, checked: string[]): void {
   downloadTextFile(`checklist-${run.id}.md`, checklistMarkdown(run, checked), "text/markdown");
 }

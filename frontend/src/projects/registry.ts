@@ -1,3 +1,10 @@
+export interface ComparePreset {
+  id: string;
+  label: string;
+  baseRef: string;
+  currentRef: string;
+}
+
 export interface SavedProject {
   id: string;
   name: string;
@@ -7,6 +14,8 @@ export interface SavedProject {
   lastBaseRef?: string;
   lastCurrentRef?: string;
   lastLens?: string;
+  lastVerbosity?: string;
+  comparePresets?: ComparePreset[];
 }
 
 const PROJECTS_KEY = "cqa.projects.v1";

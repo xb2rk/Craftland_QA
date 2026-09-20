@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import type { AnalysisLens, Finding } from "../analysis/analysis-run.entity.js";
+import type {
+  AnalysisLens,
+  Finding,
+  Verbosity,
+} from "../analysis/analysis-run.entity.js";
 import type { DiscoveredFile } from "../discovery/file-classifier.js";
 import type { GitComparison } from "../git/git-comparison.js";
 import type { ProjectInspection } from "../projects/project.service.js";
@@ -27,6 +31,9 @@ export interface BuildAnalysisContextInput {
   requestId: string;
   goal: string;
   lens?: AnalysisLens;
+  verbosity?: Verbosity;
+  notes?: string;
+  focusPaths?: string[];
   baseRef: string;
   currentRef: string;
   baseInspection: ProjectInspection;
@@ -64,12 +71,20 @@ export async function buildAnalysisContext(
     if (leftKind !== rightKind) return leftKind === "config" ? -1 : 1;
     return left.relativePath.localeCompare(right.relativePath);
   });
+  const focus = new Set((input.focusPaths ?? []).map((path) => path.trim()));
+  const orderedChanges =
+    focus.size === 0
+      ? rankedChanges
+      : [
+          ...rankedChanges.filter((change) => focus.has(change.relativePath)),
+          ...rankedChanges.filter((change) => !focus.has(change.relativePath)),
+        ];
 
   const files: WorkflowFile[] = [];
   const attachments: Array<Record<string, unknown>> = [];
   let selectedBytes = 0;
 
-  for (const change of rankedChanges) {
+  for (const change of orderedChanges) {
     const basePath = change.previousPath ?? change.relativePath;
     const candidates: Array<{ revision: "base" | "current"; file: DiscoveredFile }> = [];
     const baseFile = baseFiles.get(basePath);
@@ -138,6 +153,11 @@ export async function buildAnalysisContext(
     analysis_request: {
       goal: input.goal,
       lens: input.lens ?? "pre_merge",
+      verbosity: input.verbosity ?? "auto",
+      ...(input.notes !== undefined && input.notes.length > 0
+        ? { notes: input.notes }
+        : {}),
+      ...(focus.size > 0 ? { focus_paths: [...focus] } : {}),
       quality_dimensions: [
         "config_consistency",
         "code_impact",
@@ -169,7 +189,13 @@ export async function buildAnalysisContext(
     selectedFileCount: files.length,
     selectedBytes,
     workflowInput: {
-      prompt: buildPrompt({ goal: input.goal, lens: input.lens }),
+      prompt: buildPrompt({
+        goal: input.goal,
+        lens: input.lens,
+        verbosity: input.verbosity,
+        notes: input.notes,
+        focusPaths: focus.size > 0 ? [...focus] : undefined,
+      }),
       manifest,
       files,
       requestId: input.requestId,
