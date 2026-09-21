@@ -299,9 +299,15 @@ export function ReviewPage(): React.JSX.Element {
             items={[
               {
                 key: "ai",
-                label: "AI Review",
+                label: (
+                  <span>
+                    <span className="cqa-tabdot cqa-tabdot-ai" />
+                    AI Review
+                  </span>
+                ),
                 children: (
-                  <AiReviewPanel
+                  <div className="cqa-tabpane cqa-tabpane-ai">
+                    <AiReviewPanel
                     goal={goal}
                     onGoalChange={(value) => setGoal(value)}
                     extraTemplates={extraTemplates}
@@ -324,13 +330,21 @@ export function ReviewPage(): React.JSX.Element {
                     aiConfigured={health.data?.ai.configured === true}
                     onRun={runReview}
                     startError={startError}
-                  />
+                    />
+                  </div>
                 ),
               },
               {
                 key: "diff",
-                label: "Git Diff",
-                children: projectDiff.data === undefined ? (
+                label: (
+                  <span>
+                    <span className="cqa-tabdot cqa-tabdot-diff" />
+                    Git Diff
+                  </span>
+                ),
+                children: (
+                  <div className="cqa-tabpane cqa-tabpane-diff">
+                    {projectDiff.data === undefined ? (
                   <SectionCard title="Unified diff">
                     {projectDiff.isPending ? (
                       <div>
@@ -367,13 +381,21 @@ export function ReviewPage(): React.JSX.Element {
                       onFilterChange={setDiffFilter}
                     />
                   </SectionCard>
+                    )}
+                  </div>
                 ),
               },
               {
                 key: "files",
-                label: `Files Changed (${changedFiles.length})`,
-                children:
-                  changedFiles.length === 0 ? (
+                label: (
+                  <span>
+                    <span className="cqa-tabdot cqa-tabdot-files" />
+                    Files Changed ({changedFiles.length})
+                  </span>
+                ),
+                children: (
+                  <div className="cqa-tabpane cqa-tabpane-files">
+                    {changedFiles.length === 0 ? (
                     <Empty description="No changed files for this pair." />
                   ) : (
                     <SectionCard title="Changed files">
@@ -457,7 +479,9 @@ export function ReviewPage(): React.JSX.Element {
                         ]}
                       />
                     </SectionCard>
-                  ),
+                    )}
+                  </div>
+                ),
               },
             ]}
           />

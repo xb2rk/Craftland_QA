@@ -19,7 +19,7 @@ export function buildOpenApiDocument(): Record<string, unknown> {
       "/api/projects/branches": { get: { summary: "List branches of a local Git project" } },
       "/api/projects/commits": { get: { summary: "Search commits of a local Git project" } },
       "/api/projects/diff": { post: { summary: "Preview the file diff between two refs without running AI" } },
-      "/api/projects/whatif": { post: { summary: "Evaluate a hypothetical single-cell config edit" } },
+      "/api/projects/whatif": { post: { summary: "Ask a hypothetical tuning question or evaluate a single-cell config edit" } },
       "/api/projects/write": { post: { summary: "Draft a commit message or PR description for a ref pair" } },
       "/api/projects/localization": { post: { summary: "Check or translate localization tables for one revision" } },
       "/api/projects/localization/ask": { post: { summary: "Ask a QA question about one localization table" } },

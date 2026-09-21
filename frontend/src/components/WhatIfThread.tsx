@@ -5,6 +5,7 @@ import { useInspectQuery, useWhatIfMutation } from "../api/hooks.js";
 import { ApiError } from "../api/types.js";
 import { AiReport } from "./AiReport.js";
 import { SystemFindings } from "./SystemFindings.js";
+import { SectionCard } from "./ui/SectionCard.js";
 import { draftEditFromPrompt } from "../whatif/prompt-draft.js";
 import {
   loadThreads,
@@ -14,10 +15,23 @@ import {
 } from "../whatif/threads.js";
 
 const EXAMPLES = [
+  "What if Slime Boss HP was 300 for a better player experience?",
   "What if sword price goes from 100 to 150 in ShopData?",
-  "Set drop rate to 0.05 for the gold chest",
-  "Bump Night 3 zombie HP by 50 for id 12",
+  "Is doubling zombie HP on Night 3 safe for new players?",
 ];
+
+function hasExactEdit(result: {
+  filePath: string;
+  keyColumn: string;
+  keyValue: string;
+  column: string;
+}): boolean {
+  return (
+    result.filePath.trim().length > 0 &&
+    result.keyValue.trim().length > 0 &&
+    result.column.trim().length > 0
+  );
+}
 
 export function WhatIfThread({
   projectId,
@@ -59,14 +73,18 @@ export function WhatIfThread({
     saveThreads(next);
   };
 
-  const updateMessage = (id: string, patch: Partial<WhatIfMessage>): void => {
-    persist(threads.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
-  };
-
   const ask = (): void => {
     const question = draft.trim();
     if (question.length === 0 || whatIf.isPending) return;
+    // Parser hints only — the backend resolves the real file/row itself.
     const parsed = draftEditFromPrompt(question, csvFiles);
+    const history = messages
+      .filter((entry) => entry.result?.answer)
+      .slice(-6)
+      .map((entry) => ({
+        question: entry.question,
+        answer: entry.result!.answer as string,
+      }));
     const message: WhatIfMessage = {
       id: newThreadId(),
       projectId,
@@ -78,44 +96,54 @@ export function WhatIfThread({
       column: parsed.column,
       newValue: parsed.newValue,
       notes: parsed.notes,
-      status:
-        parsed.filePath && parsed.keyValue && parsed.column && parsed.newValue
-          ? "pending"
-          : "needs-detail",
+      status: "pending",
       createdAt: new Date().toISOString(),
     };
-    persist([...threads, message]);
+    const next = [...threads, message];
+    persist(next);
     setDraft("");
-    if (message.status === "needs-detail") return;
     whatIf.mutate(
       {
         localPath,
         baseRef,
-        filePath: message.filePath!,
-        keyColumn: message.keyColumn,
-        keyValue: message.keyValue!,
-        column: message.column!,
-        newValue: message.newValue!,
+        question,
+        history: history.length > 0 ? history : undefined,
+        filePath: parsed.filePath,
+        keyColumn: parsed.keyColumn,
+        keyValue: parsed.keyValue,
+        column: parsed.column,
+        newValue: parsed.newValue,
         goal: question,
       },
       {
-        onSuccess: (result) => updateMessage(message.id, { status: "answered", result }),
+        onSuccess: (result) =>
+          persist(
+            next.map((entry) =>
+              entry.id === message.id ? { ...entry, status: "answered", result } : entry,
+            ),
+          ),
         onError: (error) =>
-          updateMessage(message.id, {
-            status: "answered",
-            error: error instanceof Error ? error.message : "The hypothetical could not run.",
-          }),
+          persist(
+            next.map((entry) =>
+              entry.id === message.id
+                ? {
+                    ...entry,
+                    status: "answered",
+                    error: error instanceof Error ? error.message : "The hypothetical could not run.",
+                  }
+                : entry,
+            ),
+          ),
       },
     );
   };
 
   return (
-    <div>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        Reads files from <Typography.Text code>{baseRef}</Typography.Text> in {projectName} —
-        just ask. Nothing is written to the repository.
-      </Typography.Paragraph>
-
+    <SectionCard
+      title="Hypothetical tuning"
+      description={`Reads files from ${baseRef} in ${projectName} — just ask in plain words. Nothing is written to the repository.`}
+      style={{ marginBottom: 0 }}
+    >
       <div ref={scrollRef} className="cqa-chat">
         {messages.length === 0 && (
           <Alert
@@ -131,18 +159,13 @@ export function WhatIfThread({
               <Alert
                 type="warning"
                 showIcon
-                message="Almost — one detail is missing."
+                message="This question was asked with an older parser — ask it again and it will run."
                 description={
-                  <div>
-                    <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
-                      {message.notes.map((note) => (
-                        <li key={note}>{note}</li>
-                      ))}
-                    </ul>
-                    <Typography.Text type="secondary">
-                      Reply with the missing detail — e.g. the file and row name.
-                    </Typography.Text>
-                  </div>
+                  <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+                    {message.notes.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
                 }
               />
             ) : message.status === "pending" && !message.result && !message.error ? (
@@ -151,26 +174,59 @@ export function WhatIfThread({
               <Alert type="error" showIcon message={message.error} />
             ) : message.result ? (
               <div className="cqa-answer">
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  Read as: {message.result.filePath} · {message.result.keyColumn}=
-                  {message.result.keyValue} · {message.result.column}:{" "}
-                  <Typography.Text delete style={{ fontSize: 12 }}>
-                    {message.result.oldValue}
-                  </Typography.Text>{" "}
-                  → {message.result.newValue}
-                </Typography.Text>
-                <div style={{ margin: "8px 0" }}>
-                  <Tag>AI: {message.result.aiStatus.replace(/_/g, " ")}</Tag>
-                </div>
-                {message.result.findings.length > 0 ? (
-                  <SystemFindings findings={message.result.findings} />
-                ) : (
-                  <Alert
-                    type="success"
-                    showIcon
-                    message="Deterministic checks pass — no structural problems with this edit."
-                  />
+                {message.result.answer && (
+                  <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                    {message.result.answer}
+                  </Typography.Paragraph>
                 )}
+                {message.result.citations && message.result.citations.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    {message.result.citations.map((citation) => (
+                      <Tag key={citation}>{citation}</Tag>
+                    ))}
+                  </div>
+                )}
+                {hasExactEdit(message.result) ? (
+                  <>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      Read as: {message.result.filePath}
+                      {message.result.keyColumn && message.result.keyValue
+                        ? ` · ${message.result.keyColumn}=${message.result.keyValue}`
+                        : ""}
+                      {message.result.column ? (
+                        <>
+                          {" "}· {message.result.column}:{" "}
+                          <Typography.Text delete style={{ fontSize: 12 }}>
+                            {message.result.oldValue}
+                          </Typography.Text>{" "}
+                          → {message.result.newValue}
+                        </>
+                      ) : null}
+                    </Typography.Text>
+                    <div style={{ margin: "8px 0" }}>
+                      <Tag>AI: {message.result.aiStatus.replace(/_/g, " ")}</Tag>
+                    </div>
+                    {message.result.findings.length > 0 && (
+                      <SystemFindings findings={message.result.findings} />
+                    )}
+                  </>
+                ) : (
+                  message.result.findings.length > 0 && (
+                    <SystemFindings findings={message.result.findings} />
+                  )
+                )}
+                {!message.result.answer &&
+                  message.result.findings.length === 0 &&
+                  message.result.aiStatus === "not_configured" && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message={
+                        message.result.error ??
+                        "AI is not configured — exact single-cell edits still work."
+                      }
+                    />
+                  )}
                 {message.result.aiReport !== undefined && message.result.aiReport !== null && (
                   <div style={{ marginTop: 12 }}>
                     <AiReport report={message.result.aiReport} />
@@ -236,6 +292,6 @@ export function WhatIfThread({
           Clear this thread
         </Button>
       )}
-    </div>
+    </SectionCard>
   );
 }

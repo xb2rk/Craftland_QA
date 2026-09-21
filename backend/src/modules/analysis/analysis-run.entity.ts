@@ -24,6 +24,7 @@ export type AnalysisLens =
 export type Verbosity = "short" | "medium" | "long" | "auto";
 
 export interface WhatIfResult {
+  /** Resolved file for exact edits; best candidate (or "" when unknown) for Q&A. */
   filePath: string;
   baseRef: string;
   keyColumn: string;
@@ -32,6 +33,9 @@ export interface WhatIfResult {
   oldValue: string;
   newValue: string;
   findings: Finding[];
+  /** General-mode narrative answer (question path). Absent for exact-only results. */
+  answer?: string;
+  citations?: string[];
   aiReport?: Record<string, unknown>;
   aiStatus: AiStatus;
   error?: string;

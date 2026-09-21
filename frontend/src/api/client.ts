@@ -102,12 +102,14 @@ export const api = {
   runWhatIf(input: {
     localPath: string;
     baseRef?: string;
-    filePath: string;
+    filePath?: string;
     keyColumn?: string;
-    keyValue: string;
-    column: string;
-    newValue: string;
+    keyValue?: string;
+    column?: string;
+    newValue?: string;
     goal?: string;
+    question?: string;
+    history?: Array<{ question: string; answer: string }>;
   }): Promise<WhatIfResult> {
     return requestJson<WhatIfResult>("/api/projects/whatif", {
       method: "POST",

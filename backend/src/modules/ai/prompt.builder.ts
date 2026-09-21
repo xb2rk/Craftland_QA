@@ -18,6 +18,10 @@ export {
   type WhatIfPromptInput,
 } from "./prompts/whatif.prompt.js";
 export {
+  buildWhatIfAskPrompt,
+  type WhatIfAskPromptInput,
+} from "./prompts/whatif-ask.prompt.js";
+export {
   buildWriterPrompt,
   type BuildWriterPromptInput,
   type WriterDigestFile,

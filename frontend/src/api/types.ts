@@ -103,6 +103,8 @@ export interface WhatIfResult {
   oldValue: string;
   newValue: string;
   findings: Finding[];
+  answer?: string;
+  citations?: string[];
   aiReport?: NormalizedAiReport | Record<string, unknown>;
   aiStatus: "not_configured" | "completed" | "failed";
   error?: string;

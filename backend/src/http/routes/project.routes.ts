@@ -106,6 +106,8 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps): voi
           column: body.column,
           newValue: body.newValue,
           goal: body.goal,
+          question: body.question,
+          history: body.history,
         }),
       );
     }),

@@ -415,7 +415,7 @@ body {
 .cqa-tabpane {
   border-top: 3px solid transparent;
   border-radius: 0 0 12px 12px;
-  padding-top: 12px;
+  padding: 12px 16px 16px;
 }
 
 .cqa-tabpane-writers {
@@ -433,6 +433,30 @@ body {
   background: linear-gradient(180deg, rgba(217, 119, 6, 0.07), transparent 120px);
 }
 
+/* Review tabs reuse the same accent language so both pages feel like one tool. */
+.cqa-tabpane-ai,
+.cqa-tabpane-diff,
+.cqa-tabpane-files {
+  border-top: 3px solid;
+  border-radius: 0 0 12px 12px;
+  padding: 12px 16px 16px;
+}
+
+.cqa-tabpane-ai {
+  border-top-color: #4f46e5;
+  background: linear-gradient(180deg, rgba(79, 70, 229, 0.06), transparent 120px);
+}
+
+.cqa-tabpane-diff {
+  border-top-color: #0d9488;
+  background: linear-gradient(180deg, rgba(13, 148, 136, 0.07), transparent 120px);
+}
+
+.cqa-tabpane-files {
+  border-top-color: #d97706;
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.07), transparent 120px);
+}
+
 .cqa-tabdot {
   display: inline-block;
   width: 8px;
@@ -441,15 +465,18 @@ body {
   margin-right: 6px;
 }
 
-.cqa-tabdot-writers {
+.cqa-tabdot-writers,
+.cqa-tabdot-ai {
   background: #4f46e5;
 }
 
-.cqa-tabdot-loc {
+.cqa-tabdot-loc,
+.cqa-tabdot-diff {
   background: #0d9488;
 }
 
-.cqa-tabdot-whatif {
+.cqa-tabdot-whatif,
+.cqa-tabdot-files {
   background: #d97706;
 }
 
